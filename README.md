@@ -12,6 +12,7 @@ Built on the core build/collect loop, tech tree, market, and a starter quest cha
 
 - **React 18 + TypeScript**
 - **Vite** build tooling
+- **three.js + React Three Fiber** for the 3D build view (code-split, loaded on demand)
 - **Tailwind CSS** for styling (design tokens in `tailwind.config.js`)
 - **Zustand** for state management, persisted to **localStorage**
 - **lucide-react** for iconography (placeholder art)
@@ -28,9 +29,11 @@ npm run lint     # type-check only
 
 ## Gameplay
 
-- **Build** — pick a structure from the palette and tap an empty lot to place it.
-  Tap a placed structure to inspect and upgrade it (levels raise output at an
-  escalating cash cost).
+- **Build** — a 3D board rendered with React Three Fiber. Drag to orbit, pinch or
+  scroll to zoom. Tap an empty lot to place the selected structure; tap a built
+  one to inspect and upgrade it (levels raise output at an escalating cash cost,
+  and buildings grow taller as they level). Every structure is modelled from
+  primitive geometry, so the catalogue ships with no external 3D assets.
 - **Resources** — Cash, Crude, Gas, Refined Fuel, and Research Points accumulate
   every couple of seconds. Refineries consume crude to produce fuel.
 - **Research** — spend Research Points in the tech tree for production bonuses and

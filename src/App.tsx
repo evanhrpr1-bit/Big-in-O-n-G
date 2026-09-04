@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import {
   Beaker,
   ChevronDown,
@@ -12,7 +12,11 @@ import {
 } from "lucide-react";
 import { ResourceBar } from "./components/ResourceBar";
 import { BuildPalette } from "./components/BuildPalette";
-import { Grid } from "./components/Grid";
+// three.js is ~230KB gzipped, so the 3D board loads on demand and the rest of
+// the UI paints without waiting on it.
+const Scene3D = lazy(() =>
+  import("./components/Scene3D").then((m) => ({ default: m.Scene3D })),
+);
 import { SelectedPanel } from "./components/SelectedPanel";
 import { TechTree } from "./components/TechTree";
 import { QuestLog } from "./components/QuestLog";
@@ -194,12 +198,23 @@ export default function App() {
             onSelect={setSelectedType}
             showToast={showToast}
           />
-          <Grid
-            selectedType={selectedType}
-            selectedCell={selectedCell}
-            onInspect={setSelectedCell}
-            showToast={showToast}
-          />
+          <Suspense
+            fallback={
+              <div
+                className="w-full max-w-md mx-auto rounded-md border border-hair flex items-center justify-center text-xs text-[#6E6A5F]"
+                style={{ aspectRatio: "1 / 1", backgroundColor: "#16181C" }}
+              >
+                Surveying the site…
+              </div>
+            }
+          >
+            <Scene3D
+              selectedType={selectedType}
+              selectedCell={selectedCell}
+              onInspect={setSelectedCell}
+              showToast={showToast}
+            />
+          </Suspense>
         </>
       )}
 
