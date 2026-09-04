@@ -24,3 +24,6 @@ dist-ssr
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Vite dependency-optimizer cache
+.vite
