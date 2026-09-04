@@ -1,5 +1,6 @@
 import { BUILDING_TYPES } from "../game/data";
 import { DerrickModel } from "./DerrickModel";
+import { RefineryModel } from "./RefineryModel";
 import type { BuildingTypeKey } from "../game/types";
 
 /** Shared structural tones, drawn from the game's palette. */
@@ -66,24 +67,7 @@ function renderBuilding(type: BuildingTypeKey, color: string) {
       );
 
     case "refinery":
-      return (
-        <>
-          <Pad />
-          <mesh position={[-0.15, 0.36, -0.05]} castShadow>
-            <cylinderGeometry args={[0.085, 0.085, 0.66, 12]} />
-            <meshStandardMaterial color={color} roughness={0.6} metalness={0.3} />
-          </mesh>
-          <mesh position={[0.04, 0.26, -0.14]} castShadow>
-            <cylinderGeometry args={[0.065, 0.065, 0.46, 12]} />
-            <meshStandardMaterial color={STEEL} roughness={0.5} metalness={0.4} />
-          </mesh>
-          {/* Horizontal drum */}
-          <mesh position={[0.12, 0.13, 0.17]} rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[0.09, 0.09, 0.36, 12]} />
-            <meshStandardMaterial color={DARK_STEEL} roughness={0.6} metalness={0.3} />
-          </mesh>
-        </>
-      );
+      return <RefineryModel />;
 
     case "office":
       return (
