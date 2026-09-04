@@ -73,6 +73,12 @@ npm run lint     # type-check only
   platforms, LNG terminals, solar arrays). A pulsing dot on the header signals
   when advancement is available.
 
+**Offline progress** — the game settles up any time the app spends closed or
+backgrounded. On launch, and whenever it returns to the foreground, elapsed time
+is converted into production, Marabou, and pipeline decay, and a "while you were
+away" summary reports what changed. Accrual is capped at 8 hours
+(`OFFLINE_CAP_MS`).
+
 Progress is saved automatically. Use the reset button in the header to start over.
 
 ## Project layout

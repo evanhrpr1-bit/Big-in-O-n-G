@@ -99,6 +99,16 @@ export type BuildingTypeKey =
   | "lngTerminal"
   | "solarPlant";
 
+/** Summary of what accrued while the app was closed. */
+export interface OfflineReport {
+  /** Real time away, before the accrual cap is applied. */
+  awayMs: number;
+  /** Resources gained over the settled period. */
+  gained: Partial<Resources>;
+  /** Total pipeline condition points lost across leased fields. */
+  pipelineLoss: number;
+}
+
 // ---- Fleet ----
 
 /** Kinds of mobile unit the player can own. */

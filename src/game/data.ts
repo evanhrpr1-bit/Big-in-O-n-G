@@ -322,6 +322,20 @@ export const PIPELINE_DEGRADE_PER_STEP = 2;
 /** How long an ROV takes to restore a pipeline to full condition. */
 export const PIPELINE_REPAIR_MS = 30000;
 
+// ---- Offline progress ----
+
+/**
+ * The game's loops are intervals, which browsers and mobile OSes suspend when
+ * the app is backgrounded. On resume the elapsed time is settled up so closing
+ * the app doesn't stall the empire.
+ */
+/** Longest absence that still accrues progress. */
+export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
+/** Fraction of normal output earned while away. */
+export const OFFLINE_RATE = 1;
+/** Gaps shorter than this are ignored (ordinary tab switching). */
+export const OFFLINE_MIN_MS = 60000;
+
 /** Marabou trickles in slowly — the spec's "every few hours", compressed. */
 export const MARABOU_TRICKLE_MS = 120000;
 export const MARABOU_TRICKLE_AMOUNT = 1;

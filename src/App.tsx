@@ -23,6 +23,7 @@ import { FleetPanel } from "./components/FleetPanel";
 import { EraPanel } from "./components/EraPanel";
 import { EffectsBar } from "./components/EffectsBar";
 import { IncidentModal } from "./components/IncidentModal";
+import { OfflineReportModal } from "./components/OfflineReportModal";
 import { Toast } from "./components/Toast";
 import { useToast } from "./hooks/useToast";
 import {
@@ -60,6 +61,7 @@ export default function App() {
   const incidentTick = useGame((s) => s.incidentTick);
   const marabouTick = useGame((s) => s.marabouTick);
   const pipelineTick = useGame((s) => s.pipelineTick);
+  const settleOffline = useGame((s) => s.settleOffline);
   const reset = useGame((s) => s.reset);
   const era = useGame((s) => s.era);
 
@@ -105,6 +107,17 @@ export default function App() {
     const id = setInterval(pipelineTick, PIPELINE_DEGRADE_MS);
     return () => clearInterval(id);
   }, [pipelineTick]);
+
+  // Settle any time the app spent closed or backgrounded: once on launch, and
+  // again whenever it returns to the foreground (mobile suspends timers).
+  useEffect(() => {
+    settleOffline();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") settleOffline();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [settleOffline]);
 
   function handleReset() {
     if (window.confirm("Wipe your save and start a new empire?")) {
@@ -211,6 +224,8 @@ export default function App() {
       )}
 
       {eraOpen && <EraPanel onClose={() => setEraOpen(false)} showToast={showToast} />}
+
+      <OfflineReportModal />
 
       <IncidentModal showToast={showToast} />
 

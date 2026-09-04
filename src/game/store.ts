@@ -12,6 +12,10 @@ import {
   MARABOU_TRICKLE_AMOUNT,
   MARABOU_TRICKLE_MS,
   MARKET,
+  OFFLINE_CAP_MS,
+  OFFLINE_MIN_MS,
+  OFFLINE_RATE,
+  PIPELINE_DEGRADE_MS,
   PIPELINE_DEGRADE_PER_STEP,
   PIPELINE_REPAIR_MS,
   RUSH_MS_PER_MARABOU,
@@ -28,6 +32,7 @@ import {
   SELLABLE,
   STARTING_RESOURCES,
   TECHS,
+  TICK_MS,
   makeEmptyGrid,
   scaleCost,
   startingPrices,
@@ -42,6 +47,7 @@ import type {
   Incident,
   MarketEvent,
   MarketPrices,
+  OfflineReport,
   Pipelines,
   PlacedBuilding,
   ProductionBonuses,
@@ -111,6 +117,10 @@ export interface GameState {
   nextMarabouAt: number;
   /** Pipeline condition (0–100) per leased region. */
   pipelines: Pipelines;
+  /** Timestamp of the last live production tick, used to measure absences. */
+  lastTickAt: number;
+  /** Summary of the most recent offline settlement, until dismissed. */
+  offlineReport: OfflineReport | null;
 
   /** Advance production by one tick. */
   tick: () => void;
@@ -152,6 +162,10 @@ export interface GameState {
   pipelineTick: () => void;
   /** Send an idle ROV to repair a region's pipeline. */
   dispatchRov: (regionId: string) => string;
+  /** Settle progress for time the app spent closed or backgrounded. */
+  settleOffline: () => void;
+  /** Clear the welcome-back summary. */
+  dismissOfflineReport: () => void;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
   build: (index: number, type: BuildingTypeKey) => string;
   /** Upgrade the building at `index`. Returns a status message. */
@@ -228,12 +242,66 @@ function backfill(state: Partial<GameState>): GameState {
     state.nextMarabouAt = Date.now() + MARABOU_TRICKLE_MS;
   }
   if (!state.pipelines) state.pipelines = {};
+  // Saves predating offline settlement start their clock now, so upgrading
+  // never hands out a windfall for time before the feature existed.
+  if (typeof state.lastTickAt !== "number") state.lastTickAt = Date.now();
+  state.offlineReport = null;
   // Leases held before pipelines existed start at full condition.
   for (const id of state.leasedRegions) {
     if (typeof state.pipelines[id] !== "number") state.pipelines[id] = 100;
   }
 
   return state as GameState;
+}
+
+/** State a production run reads from. */
+type ProductionInputs = Pick<
+  GameState,
+  "grid" | "resources" | "effects" | "techBonuses" | "regionBonuses" | "cartelBonuses"
+>;
+
+/**
+ * Run `ticks` production ticks and return the resulting resources and effects.
+ * Shared by the live tick and offline catch-up so both use identical rules —
+ * including refinery input consumption and penalties ageing out mid-run.
+ */
+function runProduction(
+  state: ProductionInputs,
+  ticks: number,
+  rate = 1,
+): { resources: Resources; effects: ActiveEffect[] } {
+  const resources: Resources = { ...state.resources };
+  let effects = state.effects.map((e) => ({ ...e }));
+
+  for (let i = 0; i < ticks; i++) {
+    for (const cell of state.grid) {
+      if (!cell) continue;
+      const type = BUILDING_TYPES[cell.type];
+      const mult =
+        (state.techBonuses[type.resource] ?? 1) *
+        (state.regionBonuses[type.resource] ?? 1) *
+        (state.cartelBonuses[type.resource] ?? 1) *
+        effectMultiplier(effects, type.resource);
+      const amount = type.baseRate * cell.level * mult * rate;
+      if (type.consumes) {
+        const [consumeRes, consumeQty] = Object.entries(type.consumes)[0];
+        const key = consumeRes as keyof Resources;
+        const required = (consumeQty as number) * cell.level;
+        if (resources[key] >= required) {
+          resources[key] -= required;
+          resources[type.resource] += amount;
+        }
+      } else {
+        resources[type.resource] += amount;
+      }
+    }
+    // Age out temporary penalties.
+    effects = effects
+      .map((e) => ({ ...e, ticksLeft: e.ticksLeft - 1 }))
+      .filter((e) => e.ticksLeft > 0);
+  }
+
+  return { resources, effects };
 }
 
 /** Incidents whose era and building prerequisites are currently satisfied. */
@@ -312,38 +380,11 @@ export const useGame = create<GameState>()(
       fleet: startingFleet(),
       nextMarabouAt: Date.now() + MARABOU_TRICKLE_MS,
       pipelines: {},
+      lastTickAt: Date.now(),
+      offlineReport: null,
 
       tick: () =>
-        set((state) => {
-          const next: Resources = { ...state.resources };
-          for (const cell of state.grid) {
-            if (!cell) continue;
-            const type = BUILDING_TYPES[cell.type];
-            const mult =
-              (state.techBonuses[type.resource] ?? 1) *
-              (state.regionBonuses[type.resource] ?? 1) *
-              (state.cartelBonuses[type.resource] ?? 1) *
-              effectMultiplier(state.effects, type.resource);
-            const amount = type.baseRate * cell.level * mult;
-            if (type.consumes) {
-              const [consumeRes, consumeQty] = Object.entries(type.consumes)[0];
-              const key = consumeRes as keyof Resources;
-              const required = (consumeQty as number) * cell.level;
-              if (next[key] >= required) {
-                next[key] -= required;
-                next[type.resource] += amount;
-              }
-            } else {
-              next[type.resource] += amount;
-            }
-          }
-          // Age out temporary penalties.
-          const effects = state.effects
-            .map((e) => ({ ...e, ticksLeft: e.ticksLeft - 1 }))
-            .filter((e) => e.ticksLeft > 0);
-
-          return { resources: next, effects };
-        }),
+        set((state) => ({ ...runProduction(state, 1), lastTickAt: Date.now() })),
 
       marketTick: () =>
         set((state) => {
@@ -879,6 +920,74 @@ export const useGame = create<GameState>()(
         return `ROV en route to ${region?.name ?? "the field"}`;
       },
 
+      settleOffline: () => {
+        const state = get();
+        const now = Date.now();
+        const rawAway = now - state.lastTickAt;
+        // Ordinary tab switching shouldn't produce a "welcome back" summary.
+        if (rawAway < OFFLINE_MIN_MS) {
+          set({ lastTickAt: now });
+          return;
+        }
+        const awayMs = Math.min(rawAway, OFFLINE_CAP_MS);
+
+        // 1. Pipelines decay across the gap.
+        const steps = Math.floor(awayMs / PIPELINE_DEGRADE_MS);
+        const pipelines: Pipelines = { ...state.pipelines };
+        const average: Pipelines = {};
+        const perMs = PIPELINE_DEGRADE_PER_STEP / PIPELINE_DEGRADE_MS;
+        let pipelineLoss = 0;
+        for (const id of state.leasedRegions) {
+          const before = pipelines[id] ?? 100;
+          const after = Math.max(0, before - steps * PIPELINE_DEGRADE_PER_STEP);
+          pipelineLoss += before - after;
+          pipelines[id] = after;
+          // Production is credited against the average condition over the gap.
+          // Decay is linear but floors at zero, so once it bottoms out mid-gap
+          // the average is a triangle over the whole period, not (start+end)/2 —
+          // which would badly over-credit long absences.
+          const msToZero = before / perMs;
+          average[id] =
+            awayMs <= msToZero ? (before + after) / 2 : (before / 2) * (msToZero / awayMs);
+        }
+
+        // 2. Production over the gap, using those midpoint lease bonuses.
+        const ticks = Math.floor(awayMs / TICK_MS);
+        const { resources, effects } = runProduction(
+          { ...state, regionBonuses: regionBonusesFrom(state.leasedRegions, average) },
+          ticks,
+          OFFLINE_RATE,
+        );
+
+        // 3. Pay out every missed Marabou interval, not just one.
+        let nextMarabouAt = state.nextMarabouAt;
+        if (now >= nextMarabouAt) {
+          const missed = Math.floor((now - nextMarabouAt) / MARABOU_TRICKLE_MS) + 1;
+          const capped = Math.min(missed, Math.floor(OFFLINE_CAP_MS / MARABOU_TRICKLE_MS));
+          resources.marabou += capped * MARABOU_TRICKLE_AMOUNT;
+          nextMarabouAt = now + MARABOU_TRICKLE_MS;
+        }
+
+        // Summarise net gains for the welcome-back panel.
+        const gained: Partial<Resources> = {};
+        for (const key of Object.keys(resources) as (keyof Resources)[]) {
+          const delta = resources[key] - state.resources[key];
+          if (delta >= 1) gained[key] = delta;
+        }
+
+        set({
+          resources,
+          effects,
+          pipelines,
+          nextMarabouAt,
+          regionBonuses: regionBonusesFrom(state.leasedRegions, pipelines),
+          lastTickAt: now,
+          offlineReport: { awayMs: rawAway, gained, pipelineLoss },
+        });
+      },
+
+      dismissOfflineReport: () => set({ offlineReport: null }),
+
       build: (index, type) => {
         const state = get();
         if (state.grid[index]) return "That lot is already occupied";
@@ -976,11 +1085,13 @@ export const useGame = create<GameState>()(
           fleet: startingFleet(),
           nextMarabouAt: Date.now() + MARABOU_TRICKLE_MS,
           pipelines: {},
+          lastTickAt: Date.now(),
+          offlineReport: null,
         }),
     }),
     {
       name: "black-gold-empire",
-      version: 8,
+      version: 9,
       // Only persist durable game state — not action functions or transient
       // market events (those start fresh each session).
       partialize: (state) => ({
@@ -1001,6 +1112,7 @@ export const useGame = create<GameState>()(
         fleet: state.fleet,
         nextMarabouAt: state.nextMarabouAt,
         pipelines: state.pipelines,
+        lastTickAt: state.lastTickAt,
       }),
       // Backfill fields added in later versions for older saves.
       migrate: (persisted, _version) => backfill((persisted ?? {}) as Partial<GameState>),
