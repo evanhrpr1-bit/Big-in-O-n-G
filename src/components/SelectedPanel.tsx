@@ -1,6 +1,7 @@
 import { ArrowUp, X } from "lucide-react";
 import { BUILDING_TYPES, upgradeCostFor } from "../game/data";
 import { useGame } from "../game/store";
+import { BuildingSprite } from "./BuildingSprite";
 
 interface Props {
   index: number;
@@ -18,11 +19,14 @@ export function SelectedPanel({ index, onClose, showToast }: Props) {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 border-t border-hair bg-panel p-4 flex items-center justify-between">
-      <div>
-        <div className="font-medium text-sm text-paper">
-          {meta.name} · Level {cell.level}
+      <div className="flex items-center gap-3 min-w-0">
+        <BuildingSprite type={cell.type} size={32} color={meta.color} />
+        <div className="min-w-0">
+          <div className="font-medium text-sm text-paper">
+            {meta.name} · Level {cell.level}
+          </div>
+          <div className="text-xs text-[#8A8477]">{meta.blurb}</div>
         </div>
-        <div className="text-xs text-[#8A8477]">{meta.blurb}</div>
       </div>
       <div className="flex gap-2 shrink-0">
         <button

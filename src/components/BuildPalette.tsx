@@ -1,6 +1,7 @@
 import { Lock } from "lucide-react";
 import { BUILDING_TYPES, TECHS } from "../game/data";
 import { useGame } from "../game/store";
+import { BuildingSprite } from "./BuildingSprite";
 import type { BuildingTypeKey } from "../game/types";
 
 interface Props {
@@ -16,7 +17,6 @@ export function BuildPalette({ selectedType, onSelect, showToast }: Props) {
     <div className="flex gap-2 mb-4 overflow-x-auto pb-1 thin-scroll">
       {(Object.entries(BUILDING_TYPES) as [BuildingTypeKey, (typeof BUILDING_TYPES)[BuildingTypeKey]][]).map(
         ([key, type]) => {
-          const Icon = type.icon;
           const active = selectedType === key;
           const locked = !!type.requiresTech && !researchedTechs.includes(type.requiresTech);
           return (
@@ -38,7 +38,7 @@ export function BuildPalette({ selectedType, onSelect, showToast }: Props) {
               }}
               className="border rounded-md px-3 py-2 flex flex-col items-center min-w-[84px] shrink-0 transition-colors"
             >
-              {locked ? <Lock size={18} /> : <Icon size={18} />}
+              {locked ? <Lock size={18} /> : <BuildingSprite type={key} size={20} />}
               <span className="text-[11px] mt-1 font-medium text-center">{type.name}</span>
               <span className="text-[10px] opacity-80">{locked ? "Locked" : `$${type.cost}`}</span>
             </button>

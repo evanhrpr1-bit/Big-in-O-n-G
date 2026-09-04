@@ -1,6 +1,6 @@
-import { Hammer } from "lucide-react";
 import { BUILDING_TYPES, GRID_SIZE } from "../game/data";
 import { useGame } from "../game/store";
+import { BuildingSprite } from "./BuildingSprite";
 import type { BuildingTypeKey } from "../game/types";
 
 interface Props {
@@ -35,7 +35,6 @@ export function Grid({ selectedType, selectedCell, onInspect, showToast }: Props
       >
         {grid.map((cell, index) => {
           const type = cell ? BUILDING_TYPES[cell.type] : null;
-          const Icon = type ? type.icon : Hammer;
           const isSelected = selectedCell === index;
           return (
             <button
@@ -50,7 +49,7 @@ export function Grid({ selectedType, selectedCell, onInspect, showToast }: Props
             >
               {cell && type ? (
                 <>
-                  <Icon size={18} color={type.color} />
+                  <BuildingSprite type={cell.type} size={22} color={type.color} />
                   <span className="text-[9px] mt-0.5 text-[#8A8477]">Lv {cell.level}</span>
                 </>
               ) : (
