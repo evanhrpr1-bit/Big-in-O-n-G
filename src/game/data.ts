@@ -122,7 +122,8 @@ export const BUILDING_TYPES: Record<BuildingTypeKey, BuildingType> = {
     cost: 400,
     baseRate: 4,
     resource: "crude",
-    color: "#8A5CF6",
+    // Matches the platform model, which follows its reference photo.
+    color: "#E5B02A",
     blurb: "A deepwater rig with far higher output than a derrick.",
   },
   lngTerminal: {

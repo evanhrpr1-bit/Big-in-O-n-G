@@ -1,6 +1,7 @@
 import { BUILDING_TYPES } from "../game/data";
 import { DerrickModel } from "./DerrickModel";
 import { RefineryModel } from "./RefineryModel";
+import { PlatformModel } from "./PlatformModel";
 import type { BuildingTypeKey } from "../game/types";
 
 /** Shared structural tones, drawn from the game's palette. */
@@ -8,7 +9,6 @@ const PAD = "#3A362F";
 const STEEL = "#7C8794";
 const DARK_STEEL = "#4A5560";
 const FLAME = "#E3A857";
-const WATER = "#16232A";
 
 interface Props {
   type: BuildingTypeKey;
@@ -140,29 +140,7 @@ function renderBuilding(type: BuildingTypeKey, color: string) {
       );
 
     case "offshoreRig":
-      return (
-        <>
-          {/* Sea pad — this platform doesn't stand on land */}
-          <mesh position={[0, 0.012, 0]} receiveShadow>
-            <boxGeometry args={[0.72, 0.024, 0.72]} />
-            <meshStandardMaterial color={WATER} roughness={0.25} metalness={0.5} />
-          </mesh>
-          {[[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]].map(([x, z], i) => (
-            <mesh key={i} position={[x, 0.18, z]} castShadow>
-              <cylinderGeometry args={[0.032, 0.032, 0.34, 8]} />
-              <meshStandardMaterial color={DARK_STEEL} metalness={0.6} roughness={0.4} />
-            </mesh>
-          ))}
-          <mesh position={[0, 0.38, 0]} castShadow receiveShadow>
-            <boxGeometry args={[0.56, 0.08, 0.56]} />
-            <meshStandardMaterial color={STEEL} roughness={0.5} metalness={0.5} />
-          </mesh>
-          <mesh position={[0, 0.6, 0]} castShadow>
-            <cylinderGeometry args={[0.045, 0.15, 0.36, 4]} />
-            <meshStandardMaterial color={color} roughness={0.5} metalness={0.4} />
-          </mesh>
-        </>
-      );
+      return <PlatformModel />;
 
     case "lngTerminal":
       return (
