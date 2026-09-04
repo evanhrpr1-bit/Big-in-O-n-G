@@ -1,4 +1,5 @@
 import { BUILDING_TYPES } from "../game/data";
+import { DerrickModel } from "./DerrickModel";
 import type { BuildingTypeKey } from "../game/types";
 
 /** Shared structural tones, drawn from the game's palette. */
@@ -42,25 +43,7 @@ function Pad({ size = 0.62 }: { size?: number }) {
 function renderBuilding(type: BuildingTypeKey, color: string) {
   switch (type) {
     case "derrick":
-      return (
-        <>
-          <Pad />
-          {/* Tapered four-sided lattice tower */}
-          <mesh position={[0, 0.42, 0]} castShadow>
-            <cylinderGeometry args={[0.05, 0.2, 0.72, 4]} />
-            <meshStandardMaterial color={color} roughness={0.6} metalness={0.3} />
-          </mesh>
-          <mesh position={[0, 0.8, 0]} castShadow>
-            <boxGeometry args={[0.1, 0.06, 0.1]} />
-            <meshStandardMaterial color={STEEL} metalness={0.6} roughness={0.4} />
-          </mesh>
-          {/* Pumpjack counterweight */}
-          <mesh position={[0.22, 0.14, 0]} castShadow>
-            <boxGeometry args={[0.18, 0.1, 0.1]} />
-            <meshStandardMaterial color={DARK_STEEL} metalness={0.5} roughness={0.5} />
-          </mesh>
-        </>
-      );
+      return <DerrickModel />;
 
     case "gasWell":
       return (
