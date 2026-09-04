@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { BUILDING_TYPES, GRID_SIZE } from "../game/data";
 import { useGame } from "../game/store";
 import { Building3D } from "./Building3D";
@@ -14,6 +15,9 @@ interface Props {
 }
 
 const TILE = 1;
+/** The view the board opens on, and the one Recentre returns to. */
+const HOME_POSITION: [number, number, number] = [4.6, 5.0, 4.6];
+const HOME_TARGET: [number, number, number] = [0, 0.2, 0];
 /** Centre the board on the origin so the camera can orbit around it. */
 const OFFSET = (GRID_SIZE - 1) / 2;
 
@@ -28,6 +32,38 @@ export function Scene3D({ selectedType, selectedCell, onInspect, showToast }: Pr
   const grid = useGame((s) => s.grid);
   const build = useGame((s) => s.build);
   const [hovered, setHovered] = useState<number | null>(null);
+  const controls = useRef<OrbitControlsImpl>(null);
+
+  // Arrow keys pan the view too, for anyone on a keyboard.
+  useEffect(() => {
+    controls.current?.listenToKeyEvents(document.body);
+  }, []);
+
+  /** Return to the opening view. */
+  function recentre() {
+    const c = controls.current;
+    if (!c) return;
+    // A pan leaves a decaying panOffset that keeps nudging the target on later
+    // frames. Flushing it with damping off zeroes that residue, so the view
+    // actually lands on the home framing instead of drifting past it.
+    const damping = c.enableDamping;
+    c.enableDamping = false;
+    c.update();
+    c.object.position.set(...HOME_POSITION);
+    c.target.set(...HOME_TARGET);
+    c.update();
+    c.enableDamping = damping;
+  }
+
+  /** Keep the camera's focus near the board so panning can't lose it. */
+  function clampTarget() {
+    const c = controls.current;
+    if (!c) return;
+    const REACH = 5;
+    c.target.x = Math.max(-REACH, Math.min(REACH, c.target.x));
+    c.target.z = Math.max(-REACH, Math.min(REACH, c.target.z));
+    c.target.y = Math.max(-0.5, Math.min(2, c.target.y));
+  }
 
   function handleTileClick(index: number) {
     if (grid[index]) onInspect(index);
@@ -37,12 +73,18 @@ export function Scene3D({ selectedType, selectedCell, onInspect, showToast }: Pr
   return (
     <>
       <div
-        className="w-full max-w-md mx-auto rounded-md border border-hair overflow-hidden"
+        className="relative w-full max-w-md mx-auto rounded-md border border-hair overflow-hidden"
         style={{ aspectRatio: "1 / 1", backgroundColor: "#16181C", touchAction: "none" }}
       >
+        <button
+          onClick={recentre}
+          className="absolute top-2 right-2 z-10 rounded-md px-2 py-1 text-[10px] font-medium border border-hair text-[#B7B0A2] bg-panel/90"
+        >
+          Recentre
+        </button>
         <Canvas
           shadows
-          camera={{ position: [4.6, 5.0, 4.6], fov: 46 }}
+          camera={{ position: HOME_POSITION, fov: 46 }}
           dpr={[1, 2]}
           onPointerMissed={() => setHovered(null)}
         >
@@ -82,22 +124,29 @@ export function Scene3D({ selectedType, selectedCell, onInspect, showToast }: Pr
           ))}
 
           <OrbitControls
-            enablePan={false}
+            ref={controls}
+            // Drag to orbit, two fingers (or right-drag) to pan, pinch/scroll to zoom.
+            enablePan
+            // Pan along the ground rather than the screen plane, so moving the
+            // view across the field feels like sliding a map.
+            screenSpacePanning={false}
             enableDamping
             dampingFactor={0.08}
-            minDistance={3.5}
-            maxDistance={13}
-            minPolarAngle={0.25}
-            // Stay above the horizon so the board is never viewed from underneath.
-            maxPolarAngle={Math.PI / 2.35}
-            target={[0, 0.2, 0]}
+            minDistance={2.2}
+            maxDistance={20}
+            minPolarAngle={0.15}
+            // Stay just above the horizon so the board is never seen from below.
+            maxPolarAngle={1.45}
+            target={HOME_TARGET}
+            onChange={clampTarget}
           />
         </Canvas>
       </div>
 
       <p className="text-xs text-center mt-3 text-[#6E6A5F]">
-        Drag to orbit, pinch or scroll to zoom. Tap an empty lot to build the selected
-        structure; tap a built one to inspect or upgrade it.
+        Drag to orbit · two fingers or right-drag to pan · pinch, scroll or arrow keys to
+        move. Tap an empty lot to build the selected structure; tap a built one to inspect
+        or upgrade it.
       </p>
     </>
   );
