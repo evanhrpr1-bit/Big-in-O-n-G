@@ -97,6 +97,50 @@ export type BuildingTypeKey =
   | "lngTerminal"
   | "solarPlant";
 
+/** A temporary production penalty from an operational incident. */
+export interface ActiveEffect {
+  /** Unique instance id (an incident can fire more than once). */
+  id: string;
+  label: string;
+  resource: ResourceKey;
+  /** Multiplier applied to production, below 1 for a penalty. */
+  mult: number;
+  /** Production ticks remaining before the effect clears. */
+  ticksLeft: number;
+}
+
+/** One option the player can take when resolving an incident. */
+export interface IncidentChoice {
+  label: string;
+  /** Resource cost, scaled by era at fire time. Omit for a free option. */
+  cost?: Partial<Resources>;
+  /** Production penalty incurred by taking this option. */
+  penalty?: { resource: ResourceKey; mult: number; ticks: number };
+  /** Message shown once the option is taken. */
+  outcome: string;
+}
+
+/** A random operational event demanding a decision from the player. */
+export interface Incident {
+  id: string;
+  title: string;
+  desc: string;
+  kind: "spill" | "inspection" | "failure";
+  /** Only fires when the player has at least one of these buildings placed. */
+  requiresBuilding?: BuildingTypeKey[];
+  /** Minimum era index for this incident to occur. */
+  minEra?: number;
+  /** Always includes at least one free option, so it is never unresolvable. */
+  choices: IncidentChoice[];
+}
+
+/** The incident currently awaiting a decision. */
+export interface ActiveIncident {
+  id: string;
+  /** Cost multiplier locked in at fire time, scaling with the player's era. */
+  costMult: number;
+}
+
 /** An oil field on the continent map that can be scouted and leased. */
 export interface Region {
   id: string;

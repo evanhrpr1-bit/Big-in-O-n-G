@@ -9,9 +9,11 @@ import { QuestLog } from "./components/QuestLog";
 import { Market } from "./components/Market";
 import { ContinentMap } from "./components/ContinentMap";
 import { EraPanel } from "./components/EraPanel";
+import { EffectsBar } from "./components/EffectsBar";
+import { IncidentModal } from "./components/IncidentModal";
 import { Toast } from "./components/Toast";
 import { useToast } from "./hooks/useToast";
-import { ERAS, MARKET, QUESTS, TICK_MS } from "./game/data";
+import { ERAS, INCIDENT_CHECK_MS, MARKET, QUESTS, TICK_MS } from "./game/data";
 import { eraAdvancement, isQuestComplete, useGame } from "./game/store";
 import type { BuildingTypeKey } from "./game/types";
 
@@ -34,6 +36,7 @@ export default function App() {
 
   const tick = useGame((s) => s.tick);
   const marketTick = useGame((s) => s.marketTick);
+  const incidentTick = useGame((s) => s.incidentTick);
   const reset = useGame((s) => s.reset);
   const era = useGame((s) => s.era);
 
@@ -61,6 +64,12 @@ export default function App() {
     const id = setInterval(marketTick, MARKET.tickMs);
     return () => clearInterval(id);
   }, [marketTick]);
+
+  // Operational incident loop (slowest cadence).
+  useEffect(() => {
+    const id = setInterval(incidentTick, INCIDENT_CHECK_MS);
+    return () => clearInterval(id);
+  }, [incidentTick]);
 
   function handleReset() {
     if (window.confirm("Wipe your save and start a new empire?")) {
@@ -100,6 +109,8 @@ export default function App() {
       </div>
 
       <ResourceBar />
+
+      <EffectsBar />
 
       {/* View tabs */}
       <div className="flex gap-2 mb-4">
@@ -161,6 +172,8 @@ export default function App() {
       )}
 
       {eraOpen && <EraPanel onClose={() => setEraOpen(false)} showToast={showToast} />}
+
+      <IncidentModal showToast={showToast} />
 
       <Toast message={message} />
     </div>

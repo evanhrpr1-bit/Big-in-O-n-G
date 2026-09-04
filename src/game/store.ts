@@ -4,6 +4,8 @@ import {
   BUILDING_ERA,
   BUILDING_TYPES,
   ERAS,
+  INCIDENTS,
+  INCIDENT_CHANCE,
   MARKET,
   QUESTS,
   REGIONS,
@@ -12,16 +14,21 @@ import {
   STARTING_RESOURCES,
   TECHS,
   makeEmptyGrid,
+  scaleCost,
   startingPrices,
   upgradeCostFor,
 } from "./data";
 import type {
+  ActiveEffect,
+  ActiveIncident,
   BuildingTypeKey,
+  Incident,
   MarketEvent,
   MarketPrices,
   PlacedBuilding,
   ProductionBonuses,
   Quest,
+  ResourceKey,
   Resources,
   SellableResource,
   Tech,
@@ -53,6 +60,10 @@ export interface GameState {
   leasedRegions: string[];
   /** Production bonuses derived from held region leases. */
   regionBonuses: ProductionBonuses;
+  /** Temporary production penalties from resolved incidents. */
+  effects: ActiveEffect[];
+  /** Incident awaiting a decision, if any. */
+  activeIncident: ActiveIncident | null;
 
   /** Advance production by one tick. */
   tick: () => void;
@@ -66,6 +77,10 @@ export interface GameState {
   scoutRegion: (id: string) => string;
   /** Acquire a scouted region's lease, activating its production bonus. */
   leaseRegion: (id: string) => string;
+  /** Possibly fire a random operational incident. */
+  incidentTick: () => void;
+  /** Resolve the pending incident with the given choice. Returns a message. */
+  resolveIncident: (choiceIndex: number) => string;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
   build: (index: number, type: BuildingTypeKey) => string;
   /** Upgrade the building at `index`. Returns a status message. */
@@ -76,6 +91,25 @@ export interface GameState {
   claimQuest: (questId: string) => string;
   /** Wipe the save and start over. */
   reset: () => void;
+}
+
+/** Incidents whose era and building prerequisites are currently satisfied. */
+function eligibleIncidents(
+  state: Pick<GameState, "era" | "grid">,
+): Incident[] {
+  return INCIDENTS.filter((incident) => {
+    if ((incident.minEra ?? 0) > state.era) return false;
+    if (incident.requiresBuilding) {
+      const required = incident.requiresBuilding;
+      if (!state.grid.some((cell) => cell && required.includes(cell.type))) return false;
+    }
+    return true;
+  });
+}
+
+/** Combined multiplier from all active penalties affecting a resource. */
+export function effectMultiplier(effects: ActiveEffect[], resource: ResourceKey): number {
+  return effects.reduce((mult, e) => (e.resource === resource ? mult * e.mult : mult), 1);
 }
 
 /** Recompute the production bonus map from the set of held region leases. */
@@ -117,6 +151,8 @@ export const useGame = create<GameState>()(
       scoutedRegions: [],
       leasedRegions: [],
       regionBonuses: { ...NEUTRAL_BONUSES },
+      effects: [],
+      activeIncident: null,
 
       tick: () =>
         set((state) => {
@@ -126,7 +162,8 @@ export const useGame = create<GameState>()(
             const type = BUILDING_TYPES[cell.type];
             const mult =
               (state.techBonuses[type.resource] ?? 1) *
-              (state.regionBonuses[type.resource] ?? 1);
+              (state.regionBonuses[type.resource] ?? 1) *
+              effectMultiplier(state.effects, type.resource);
             const amount = type.baseRate * cell.level * mult;
             if (type.consumes) {
               const [consumeRes, consumeQty] = Object.entries(type.consumes)[0];
@@ -140,7 +177,12 @@ export const useGame = create<GameState>()(
               next[type.resource] += amount;
             }
           }
-          return { resources: next };
+          // Age out temporary penalties.
+          const effects = state.effects
+            .map((e) => ({ ...e, ticksLeft: e.ticksLeft - 1 }))
+            .filter((e) => e.ticksLeft > 0);
+
+          return { resources: next, effects };
         }),
 
       marketTick: () =>
@@ -263,6 +305,63 @@ export const useGame = create<GameState>()(
           : `Lease acquired: ${region.name}`;
       },
 
+      incidentTick: () => {
+        const state = get();
+        // Only one incident is pending at a time.
+        if (state.activeIncident) return;
+        if (Math.random() >= INCIDENT_CHANCE) return;
+        const pool = eligibleIncidents(state);
+        if (pool.length === 0) return;
+        const incident = pool[Math.floor(Math.random() * pool.length)];
+        set({
+          activeIncident: {
+            id: incident.id,
+            // Costs scale with era so incidents stay meaningful late game.
+            costMult: 1 + state.era * 0.8,
+          },
+        });
+      },
+
+      resolveIncident: (choiceIndex) => {
+        const state = get();
+        const active = state.activeIncident;
+        if (!active) return "No incident to resolve";
+        const incident = INCIDENTS.find((i) => i.id === active.id);
+        if (!incident) {
+          set({ activeIncident: null });
+          return "Incident cleared";
+        }
+        const choice = incident.choices[choiceIndex];
+        if (!choice) return "Invalid choice";
+
+        const cost = scaleCost(choice.cost, active.costMult);
+        for (const [res, amount] of Object.entries(cost)) {
+          if (state.resources[res as keyof Resources] < (amount as number)) {
+            return `Not enough ${RESOURCE_META[res as keyof Resources].label} for that`;
+          }
+        }
+
+        const resources = { ...state.resources };
+        for (const [res, amount] of Object.entries(cost)) {
+          resources[res as keyof Resources] -= amount as number;
+        }
+
+        const effects = [...state.effects];
+        if (choice.penalty) {
+          const { resource, mult, ticks } = choice.penalty;
+          effects.push({
+            id: `${incident.id}-${Date.now()}`,
+            label: `${RESOURCE_META[resource].label} −${Math.round((1 - mult) * 100)}%`,
+            resource,
+            mult,
+            ticksLeft: ticks,
+          });
+        }
+
+        set({ resources, effects, activeIncident: null });
+        return choice.outcome;
+      },
+
       build: (index, type) => {
         const state = get();
         if (state.grid[index]) return "That lot is already occupied";
@@ -351,11 +450,13 @@ export const useGame = create<GameState>()(
           scoutedRegions: [],
           leasedRegions: [],
           regionBonuses: { ...NEUTRAL_BONUSES },
+          effects: [],
+          activeIncident: null,
         }),
     }),
     {
       name: "black-gold-empire",
-      version: 4,
+      version: 5,
       // Only persist durable game state — not action functions or transient
       // market events (those start fresh each session).
       partialize: (state) => ({
@@ -367,6 +468,9 @@ export const useGame = create<GameState>()(
         era: state.era,
         scoutedRegions: state.scoutedRegions,
         leasedRegions: state.leasedRegions,
+        // Persisted so a reload can't dodge a pending decision or penalty.
+        effects: state.effects,
+        activeIncident: state.activeIncident,
       }),
       // Backfill fields added in later versions for older saves.
       migrate: (persisted, _version) => {
@@ -375,6 +479,8 @@ export const useGame = create<GameState>()(
         if (typeof state.era !== "number") state.era = 0;
         if (!state.scoutedRegions) state.scoutedRegions = [];
         if (!state.leasedRegions) state.leasedRegions = [];
+        if (!state.effects) state.effects = [];
+        if (state.activeIncident === undefined) state.activeIncident = null;
         return state as GameState;
       },
       // Rehydrate derived bonuses from the saved tech and lease lists.
@@ -385,6 +491,8 @@ export const useGame = create<GameState>()(
         if (typeof state.era !== "number") state.era = 0;
         if (!state.scoutedRegions) state.scoutedRegions = [];
         if (!state.leasedRegions) state.leasedRegions = [];
+        if (!state.effects) state.effects = [];
+        if (state.activeIncident === undefined) state.activeIncident = null;
         state.regionBonuses = regionBonusesFrom(state.leasedRegions);
       },
     },

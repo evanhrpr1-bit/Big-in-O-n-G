@@ -40,6 +40,12 @@ npm run lint     # type-check only
 - **Market** — sell crude, gas, and refined fuel for cash at live prices that
   drift every few seconds. Random **price spikes and crashes** reward timing your
   trades. This closes the economic loop: production → market → cash → expansion.
+- **Incidents** — blowouts, pipeline ruptures, refinery fires, and regulatory
+  inspections strike your operation at random. Each forces a decision: pay to
+  fix it properly, or take the free option and eat a temporary production
+  penalty. Active penalties are tracked with countdowns under the resource bar.
+  Incidents only fire when you have the relevant buildings, and their costs
+  scale with your era.
 - **Map** — a continent of oil fields. **Scout** a field to survey its yield,
   then **acquire the lease** for a permanent production bonus that applies across
   your whole operation. Richer fields are held by rival companies and priced with
@@ -68,7 +74,7 @@ src/
 
 ## Roadmap
 
-The design spec calls for more than this foundation — random operational events
-(spills, inspections) and Cartel (guild) / PvP features. The data-driven `game/`
-layer is structured so new buildings, techs, quests, eras, regions, and market
-tuning are added by editing `data.ts`.
+The design spec calls for one more system — Cartel (guild) / PvP features,
+including rival raids and cooperative research bonuses. The data-driven `game/`
+layer is structured so new buildings, techs, quests, eras, regions, incidents,
+and market tuning are added by editing `data.ts`.

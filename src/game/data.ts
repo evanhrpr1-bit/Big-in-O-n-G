@@ -14,10 +14,12 @@ import type {
   BuildingType,
   BuildingTypeKey,
   Era,
+  Incident,
   MarketPrices,
   Quest,
   Region,
   ResourceKey,
+  Resources,
   SellableResource,
   Tech,
 } from "./types";
@@ -230,6 +232,128 @@ export const ERAS: Era[] = [
     unlocks: ["solarPlant"],
   },
 ];
+
+// ---- Operational incidents ----
+
+/** How often a possible incident is rolled for, in milliseconds. */
+export const INCIDENT_CHECK_MS = 25000;
+/** Chance per check that an incident fires, when one isn't already pending. */
+export const INCIDENT_CHANCE = 0.2;
+
+/**
+ * Random operational events. Every incident offers at least one free option,
+ * so it can always be resolved — the free path just costs production instead
+ * of cash.
+ */
+export const INCIDENTS: Incident[] = [
+  {
+    id: "blowout",
+    title: "Blowout at the Wellhead",
+    kind: "spill",
+    desc: "Pressure control failed on one of your crude wells. There's oil on the ground and the regulator is already on the phone.",
+    requiresBuilding: ["derrick", "steelRig", "offshoreRig"],
+    choices: [
+      {
+        label: "Fund a full cleanup",
+        cost: { cash: 500 },
+        outcome: "Cleanup crews contained the spill. No lasting damage.",
+      },
+      {
+        label: "Minimal containment",
+        penalty: { resource: "crude", mult: 0.6, ticks: 12 },
+        outcome: "You capped it cheaply — but the field is throttled while inspectors linger.",
+      },
+    ],
+  },
+  {
+    id: "inspection",
+    title: "Regulatory Inspection",
+    kind: "inspection",
+    desc: "A surprise audit flags a dozen aging safety systems across your sites.",
+    choices: [
+      {
+        label: "Pay for compliance upgrades",
+        cost: { cash: 400 },
+        outcome: "Upgrades signed off. The inspector left satisfied.",
+      },
+      {
+        label: "Contest the citation",
+        penalty: { resource: "cash", mult: 0.7, ticks: 15 },
+        outcome: "You're fighting it in court, and the fines are eating into revenue.",
+      },
+    ],
+  },
+  {
+    id: "rupture",
+    title: "Pipeline Rupture",
+    kind: "failure",
+    desc: "A gas line has split at a weld. Flow is down until it's dealt with.",
+    requiresBuilding: ["gasWell", "pipelineHub"],
+    choices: [
+      {
+        label: "Emergency repair crew",
+        cost: { cash: 450 },
+        outcome: "The weld was replaced overnight. Flow restored.",
+      },
+      {
+        label: "Patch and monitor",
+        penalty: { resource: "gas", mult: 0.6, ticks: 12 },
+        outcome: "The patch holds, mostly. Throughput is down until a real fix.",
+      },
+    ],
+  },
+  {
+    id: "refineryFire",
+    title: "Fire in the Cracking Unit",
+    kind: "failure",
+    desc: "A processing unit caught fire. Nobody was hurt, but the unit is offline.",
+    requiresBuilding: ["refinery", "lngTerminal"],
+    choices: [
+      {
+        label: "Rebuild the unit",
+        cost: { cash: 900 },
+        outcome: "The unit is back online at full throughput.",
+      },
+      {
+        label: "Run reduced throughput",
+        penalty: { resource: "fuel", mult: 0.5, ticks: 12 },
+        outcome: "You're refining at half rate around the damaged unit.",
+      },
+    ],
+  },
+  {
+    id: "audit",
+    title: "Environmental Audit",
+    kind: "inspection",
+    minEra: 2,
+    desc: "Regulators want a full environmental review of your offshore operations.",
+    choices: [
+      {
+        label: "Settle quietly",
+        cost: { cash: 2000 },
+        outcome: "Settled out of the press. The review is closed.",
+      },
+      {
+        label: "Submit to a public review",
+        penalty: { resource: "cash", mult: 0.75, ticks: 18 },
+        outcome: "The review drags on publicly, and buyers are negotiating harder.",
+      },
+    ],
+  },
+];
+
+/** Scale an incident's base cost by the multiplier locked in at fire time. */
+export function scaleCost(
+  cost: Partial<Resources> | undefined,
+  mult: number,
+): Partial<Resources> {
+  if (!cost) return {};
+  const scaled: Partial<Resources> = {};
+  for (const [res, amount] of Object.entries(cost)) {
+    scaled[res as ResourceKey] = Math.round((amount as number) * mult);
+  }
+  return scaled;
+}
 
 // ---- Continent map ----
 
