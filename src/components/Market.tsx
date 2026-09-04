@@ -1,6 +1,6 @@
 import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { MARKET, RESOURCE_META, SELLABLE } from "../game/data";
-import { effectivePrice, useGame } from "../game/store";
+import { cartelMarketMult, effectivePrice, useGame } from "../game/store";
 import type { SellableResource } from "../game/types";
 
 interface Props {
@@ -21,6 +21,9 @@ export function Market({ showToast }: Props) {
   const prices = useGame((s) => s.prices);
   const marketEvent = useGame((s) => s.marketEvent);
   const sell = useGame((s) => s.sell);
+  const cartelId = useGame((s) => s.cartelId);
+  const cartelContribution = useGame((s) => s.cartelContribution);
+  const marketMult = cartelMarketMult(cartelId, cartelContribution);
 
   return (
     <div className="flex flex-col gap-2 max-w-md mx-auto">
@@ -51,7 +54,7 @@ export function Market({ showToast }: Props) {
       {SELLABLE.map((resource) => {
         const meta = RESOURCE_META[resource];
         const Icon = meta.icon;
-        const price = effectivePrice(resource, prices, marketEvent);
+        const price = effectivePrice(resource, prices, marketEvent, marketMult);
         const held = Math.floor(resources[resource]);
         const { Icon: TrendIcon, color: trendColor } = trendFor(resource, price);
         const eventHere = marketEvent?.resource === resource;
@@ -101,6 +104,13 @@ export function Market({ showToast }: Props) {
           </div>
         );
       })}
+
+      {marketMult > 1 && (
+        <p className="text-[11px] text-center text-[#5B7B6E]">
+          Cartel standing is lifting your sale prices by{" "}
+          {Math.round((marketMult - 1) * 100)}%
+        </p>
+      )}
 
       <p className="text-xs text-center mt-1 text-[#6E6A5F]">
         Prices drift every few seconds. Watch for spikes to sell high — and crashes to hold.

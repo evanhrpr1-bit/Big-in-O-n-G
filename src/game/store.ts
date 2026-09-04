@@ -3,10 +3,16 @@ import { persist } from "zustand/middleware";
 import {
   BUILDING_ERA,
   BUILDING_TYPES,
+  CARTELS,
+  CARTEL_BACKING_PER_LEVEL,
   ERAS,
   INCIDENTS,
   INCIDENT_CHANCE,
   MARKET,
+  RAID_APPROACHES,
+  RAID_COOLDOWN_MS,
+  RESEARCH_CONTRIBUTION_RATE,
+  RIVALS,
   QUESTS,
   REGIONS,
   RESOURCE_META,
@@ -64,6 +70,14 @@ export interface GameState {
   effects: ActiveEffect[];
   /** Incident awaiting a decision, if any. */
   activeIncident: ActiveIncident | null;
+  /** Id of the cartel the player belongs to, if any. */
+  cartelId: string | null;
+  /** Contribution points banked with the current cartel. */
+  cartelContribution: number;
+  /** Production bonuses derived from cartel standing. */
+  cartelBonuses: ProductionBonuses;
+  /** Timestamp before which no further rival operation may be run. */
+  raidCooldownUntil: number;
 
   /** Advance production by one tick. */
   tick: () => void;
@@ -81,6 +95,14 @@ export interface GameState {
   incidentTick: () => void;
   /** Resolve the pending incident with the given choice. Returns a message. */
   resolveIncident: (choiceIndex: number) => string;
+  /** Pay dues and join a cartel. */
+  joinCartel: (id: string) => string;
+  /** Leave the current cartel, forfeiting banked contributions. */
+  leaveCartel: () => string;
+  /** Contribute cash or research toward cartel standing. */
+  contributeToCartel: (resource: "cash" | "research", amount: number) => string;
+  /** Run an operation against a rival. Resolves immediately win or lose. */
+  runRaid: (rivalId: string, approachId: string) => string;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
   build: (index: number, type: BuildingTypeKey) => string;
   /** Upgrade the building at `index`. Returns a status message. */
@@ -91,6 +113,44 @@ export interface GameState {
   claimQuest: (questId: string) => string;
   /** Wipe the save and start over. */
   reset: () => void;
+}
+
+/** Standing level with a cartel, from banked contribution points. */
+export function cartelLevel(cartelId: string | null, contribution: number): number {
+  const cartel = CARTELS.find((c) => c.id === cartelId);
+  if (!cartel) return 0;
+  return Math.min(cartel.maxLevel, 1 + Math.floor(contribution / cartel.contributionPerLevel));
+}
+
+/** Production bonuses granted by the current cartel at its standing level. */
+function cartelBonusesFrom(cartelId: string | null, contribution: number): ProductionBonuses {
+  const bonuses: ProductionBonuses = { ...NEUTRAL_BONUSES };
+  const cartel = CARTELS.find((c) => c.id === cartelId);
+  if (!cartel || cartel.bonus.kind !== "production") return bonuses;
+  const level = cartelLevel(cartelId, contribution);
+  bonuses[cartel.bonus.resource] *= 1 + cartel.bonus.perLevel * level;
+  return bonuses;
+}
+
+/** Market sale-price multiplier granted by a trade-focused cartel. */
+export function cartelMarketMult(cartelId: string | null, contribution: number): number {
+  const cartel = CARTELS.find((c) => c.id === cartelId);
+  if (!cartel || cartel.bonus.kind !== "market") return 1;
+  return 1 + cartel.bonus.perLevel * cartelLevel(cartelId, contribution);
+}
+
+/** Success chance for an operation, given the target and cartel backing. */
+export function raidSuccessChance(
+  rivalId: string,
+  approachId: string,
+  cartelId: string | null,
+  contribution: number,
+): number {
+  const rival = RIVALS.find((r) => r.id === rivalId);
+  const approach = RAID_APPROACHES.find((a) => a.id === approachId);
+  if (!rival || !approach) return 0;
+  const backing = cartelLevel(cartelId, contribution) * CARTEL_BACKING_PER_LEVEL;
+  return Math.max(0.05, Math.min(0.95, approach.baseSuccess - rival.difficulty + backing));
 }
 
 /** Incidents whose era and building prerequisites are currently satisfied. */
@@ -153,6 +213,10 @@ export const useGame = create<GameState>()(
       regionBonuses: { ...NEUTRAL_BONUSES },
       effects: [],
       activeIncident: null,
+      cartelId: null,
+      cartelContribution: 0,
+      cartelBonuses: { ...NEUTRAL_BONUSES },
+      raidCooldownUntil: 0,
 
       tick: () =>
         set((state) => {
@@ -163,6 +227,7 @@ export const useGame = create<GameState>()(
             const mult =
               (state.techBonuses[type.resource] ?? 1) *
               (state.regionBonuses[type.resource] ?? 1) *
+              (state.cartelBonuses[type.resource] ?? 1) *
               effectMultiplier(state.effects, type.resource);
             const amount = type.baseRate * cell.level * mult;
             if (type.consumes) {
@@ -224,7 +289,12 @@ export const useGame = create<GameState>()(
         const have = Math.floor(state.resources[resource]);
         const amount = Math.min(qty, have);
         if (amount <= 0) return `No ${label.toLowerCase()} to sell`;
-        const price = effectivePrice(resource, state.prices, state.marketEvent);
+        const price = effectivePrice(
+          resource,
+          state.prices,
+          state.marketEvent,
+          cartelMarketMult(state.cartelId, state.cartelContribution),
+        );
         const proceeds = Math.floor(price * amount);
         set({
           resources: {
@@ -362,6 +432,120 @@ export const useGame = create<GameState>()(
         return choice.outcome;
       },
 
+      joinCartel: (id) => {
+        const state = get();
+        const cartel = CARTELS.find((c) => c.id === id);
+        if (!cartel) return "Unknown cartel";
+        if (state.cartelId === id) return `You already ride with ${cartel.name}`;
+        if (state.resources.cash < cartel.dues) {
+          return `Not enough cash for ${cartel.name} dues`;
+        }
+        set({
+          resources: { ...state.resources, cash: state.resources.cash - cartel.dues },
+          cartelId: id,
+          // Standing is per-cartel and does not carry over.
+          cartelContribution: 0,
+          cartelBonuses: cartelBonusesFrom(id, 0),
+        });
+        return `Joined ${cartel.name}`;
+      },
+
+      leaveCartel: () => {
+        const state = get();
+        if (!state.cartelId) return "You're not in a cartel";
+        const name = CARTELS.find((c) => c.id === state.cartelId)?.name ?? "the cartel";
+        set({
+          cartelId: null,
+          cartelContribution: 0,
+          cartelBonuses: { ...NEUTRAL_BONUSES },
+        });
+        return `Left ${name}. Standing forfeited.`;
+      },
+
+      contributeToCartel: (resource, amount) => {
+        const state = get();
+        if (!state.cartelId) return "Join a cartel first";
+        if (state.resources[resource] < amount) {
+          return `Not enough ${RESOURCE_META[resource].label}`;
+        }
+        const points =
+          resource === "research" ? amount * RESEARCH_CONTRIBUTION_RATE : amount;
+        const cartelContribution = state.cartelContribution + points;
+        const before = cartelLevel(state.cartelId, state.cartelContribution);
+        const after = cartelLevel(state.cartelId, cartelContribution);
+        set({
+          resources: {
+            ...state.resources,
+            [resource]: state.resources[resource] - amount,
+          },
+          cartelContribution,
+          cartelBonuses: cartelBonusesFrom(state.cartelId, cartelContribution),
+        });
+        return after > before
+          ? `Standing raised to level ${after}`
+          : `Contributed to the cartel`;
+      },
+
+      runRaid: (rivalId, approachId) => {
+        const state = get();
+        if (!state.cartelId) return "You need cartel backing to move against a rival";
+        if (Date.now() < state.raidCooldownUntil) return "Your crews are still lying low";
+        const rival = RIVALS.find((r) => r.id === rivalId);
+        const approach = RAID_APPROACHES.find((a) => a.id === approachId);
+        if (!rival || !approach) return "Unknown operation";
+        if (state.era < rival.minEra) {
+          return `Reach the ${ERAS[rival.minEra].name} to move against ${rival.name}`;
+        }
+
+        const cost = scaleCost(approach.cost, rival.rewardScale);
+        for (const [res, amount] of Object.entries(cost)) {
+          if (state.resources[res as keyof Resources] < (amount as number)) {
+            return `Not enough ${RESOURCE_META[res as keyof Resources].label} to fund this`;
+          }
+        }
+
+        const resources = { ...state.resources };
+        for (const [res, amount] of Object.entries(cost)) {
+          resources[res as keyof Resources] -= amount as number;
+        }
+
+        const chance = raidSuccessChance(
+          rivalId,
+          approachId,
+          state.cartelId,
+          state.cartelContribution,
+        );
+        const success = Math.random() < chance;
+        const effects = [...state.effects];
+
+        if (success) {
+          const reward = scaleCost(approach.reward, rival.rewardScale);
+          for (const [res, amount] of Object.entries(reward)) {
+            resources[res as keyof Resources] += amount as number;
+          }
+        } else {
+          const { resource, mult, ticks } = approach.failurePenalty;
+          effects.push({
+            id: `raid-${rivalId}-${Date.now()}`,
+            label: `${RESOURCE_META[resource].label} −${Math.round((1 - mult) * 100)}%`,
+            resource,
+            mult,
+            ticksLeft: ticks,
+          });
+        }
+
+        set({ resources, effects, raidCooldownUntil: Date.now() + RAID_COOLDOWN_MS });
+
+        if (success) {
+          return approach.id === "sabotage"
+            ? `Sabotage landed — ${rival.name} dropped contracts and you took them`
+            : `Deal struck with ${rival.name}'s people`;
+        }
+        return approach.id === "sabotage"
+          ? `The job was traced back to you. ${rival.name} retaliated.`
+          : `${rival.name} walked away from the table — and talked.`;
+      },
+
       build: (index, type) => {
         const state = get();
         if (state.grid[index]) return "That lot is already occupied";
@@ -452,11 +636,15 @@ export const useGame = create<GameState>()(
           regionBonuses: { ...NEUTRAL_BONUSES },
           effects: [],
           activeIncident: null,
+          cartelId: null,
+          cartelContribution: 0,
+          cartelBonuses: { ...NEUTRAL_BONUSES },
+          raidCooldownUntil: 0,
         }),
     }),
     {
       name: "black-gold-empire",
-      version: 5,
+      version: 6,
       // Only persist durable game state — not action functions or transient
       // market events (those start fresh each session).
       partialize: (state) => ({
@@ -471,6 +659,9 @@ export const useGame = create<GameState>()(
         // Persisted so a reload can't dodge a pending decision or penalty.
         effects: state.effects,
         activeIncident: state.activeIncident,
+        cartelId: state.cartelId,
+        cartelContribution: state.cartelContribution,
+        raidCooldownUntil: state.raidCooldownUntil,
       }),
       // Backfill fields added in later versions for older saves.
       migrate: (persisted, _version) => {
@@ -481,6 +672,9 @@ export const useGame = create<GameState>()(
         if (!state.leasedRegions) state.leasedRegions = [];
         if (!state.effects) state.effects = [];
         if (state.activeIncident === undefined) state.activeIncident = null;
+        if (state.cartelId === undefined) state.cartelId = null;
+        if (typeof state.cartelContribution !== "number") state.cartelContribution = 0;
+        if (typeof state.raidCooldownUntil !== "number") state.raidCooldownUntil = 0;
         return state as GameState;
       },
       // Rehydrate derived bonuses from the saved tech and lease lists.
@@ -493,7 +687,11 @@ export const useGame = create<GameState>()(
         if (!state.leasedRegions) state.leasedRegions = [];
         if (!state.effects) state.effects = [];
         if (state.activeIncident === undefined) state.activeIncident = null;
+        if (state.cartelId === undefined) state.cartelId = null;
+        if (typeof state.cartelContribution !== "number") state.cartelContribution = 0;
+        if (typeof state.raidCooldownUntil !== "number") state.raidCooldownUntil = 0;
         state.regionBonuses = regionBonusesFrom(state.leasedRegions);
+        state.cartelBonuses = cartelBonusesFrom(state.cartelId, state.cartelContribution);
       },
     },
   ),
@@ -506,9 +704,10 @@ export function effectivePrice(
   resource: SellableResource,
   prices: MarketPrices,
   event: MarketEvent | null,
+  marketMult = 1,
 ): number {
   const mult = event && event.resource === resource ? event.mult : 1;
-  return prices[resource] * mult;
+  return prices[resource] * mult * marketMult;
 }
 
 // ---- Era selectors (pure) ----

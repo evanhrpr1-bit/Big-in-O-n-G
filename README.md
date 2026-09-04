@@ -40,6 +40,13 @@ npm run lint     # type-check only
 - **Market** — sell crude, gas, and refined fuel for cash at live prices that
   drift every few seconds. Random **price spikes and crashes** reward timing your
   trades. This closes the economic loop: production → market → cash → expansion.
+- **Cartel** — join one of three cartels for a cooperative bonus that grows with
+  your standing: crude output, research output, or market sale prices. Contribute
+  cash or research points to raise standing (up to level 5). Membership also
+  unlocks **rival operations** — move against Meridian, Atlas, or Consolidated by
+  **negotiating a side deal** (safe, modest payoff) or **sabotaging their
+  operation** (risky, big payoff). Higher standing improves your odds; a failed
+  operation brings retaliation, and there's a cooldown between attempts.
 - **Incidents** — blowouts, pipeline ruptures, refinery fires, and regulatory
   inspections strike your operation at random. Each forces a decision: pay to
   fix it properly, or take the free option and eat a temporary production
@@ -74,7 +81,11 @@ src/
 
 ## Roadmap
 
-The design spec calls for one more system — Cartel (guild) / PvP features,
-including rival raids and cooperative research bonuses. The data-driven `game/`
-layer is structured so new buildings, techs, quests, eras, regions, incidents,
-and market tuning are added by editing `data.ts`.
+All systems from the design spec are now implemented. Cartels and rival
+operations run against AI competitors rather than real players — true
+multiplayer (shared cartels, live PvP) would need the optional Node/Postgres
+backend the spec mentions.
+
+The data-driven `game/` layer is structured so new buildings, techs, quests,
+eras, regions, incidents, cartels, rivals, and market tuning are added by
+editing `data.ts`.

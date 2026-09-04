@@ -13,13 +13,16 @@ import {
 import type {
   BuildingType,
   BuildingTypeKey,
+  Cartel,
   Era,
   Incident,
   MarketPrices,
   Quest,
+  RaidApproach,
   Region,
   ResourceKey,
   Resources,
+  Rival,
   SellableResource,
   Tech,
 } from "./types";
@@ -230,6 +233,95 @@ export const ERAS: Era[] = [
     name: "Renewable Transition",
     tagline: "Pivot to clean energy — prestige buildings for the endgame.",
     unlocks: ["solarPlant"],
+  },
+];
+
+// ---- Cartels & rival operations ----
+
+/** Cooldown between operations against rivals, in milliseconds. */
+export const RAID_COOLDOWN_MS = 60000;
+
+/** Research points are worth this many contribution points each. */
+export const RESEARCH_CONTRIBUTION_RATE = 20;
+
+/** Success chance gained per level of cartel standing. */
+export const CARTEL_BACKING_PER_LEVEL = 0.03;
+
+export const CARTELS: Cartel[] = [
+  {
+    id: "permian",
+    name: "The Permian Compact",
+    motto: "Shared rigs, shared pay. Nobody drills alone out here.",
+    dues: 1000,
+    bonus: { kind: "production", resource: "crude", perLevel: 0.06 },
+    contributionPerLevel: 2000,
+    maxLevel: 5,
+  },
+  {
+    id: "gulf",
+    name: "Gulf Coast Syndicate",
+    motto: "We don't pump harder. We sell smarter.",
+    dues: 1200,
+    bonus: { kind: "market", perLevel: 0.05 },
+    contributionPerLevel: 2500,
+    maxLevel: 5,
+  },
+  {
+    id: "northern",
+    name: "Northern Reach Alliance",
+    motto: "Pooled labs, pooled patents. Everyone reads the results.",
+    dues: 900,
+    bonus: { kind: "production", resource: "research", perLevel: 0.1 },
+    contributionPerLevel: 1800,
+    maxLevel: 5,
+  },
+];
+
+export const RIVALS: Rival[] = [
+  {
+    id: "meridian",
+    name: "Meridian Petroleum",
+    blurb: "A mid-sized operator with thin security and thinner margins.",
+    difficulty: 0.05,
+    rewardScale: 1,
+    minEra: 0,
+  },
+  {
+    id: "atlas",
+    name: "Atlas Drilling Co.",
+    blurb: "Sits on prime acreage and knows it. Well-guarded yards.",
+    difficulty: 0.18,
+    rewardScale: 2.2,
+    minEra: 1,
+  },
+  {
+    id: "consolidated",
+    name: "Consolidated Fuels",
+    blurb: "A vertically integrated giant. Moving against them is a real risk.",
+    difficulty: 0.3,
+    rewardScale: 4.5,
+    minEra: 3,
+  },
+];
+
+export const RAID_APPROACHES: RaidApproach[] = [
+  {
+    id: "negotiation",
+    label: "Negotiate a side deal",
+    desc: "Buy information and a quiet handshake. Lower payoff, far lower risk.",
+    cost: { cash: 400 },
+    baseSuccess: 0.85,
+    reward: { cash: 900 },
+    failurePenalty: { resource: "cash", mult: 0.85, ticks: 10 },
+  },
+  {
+    id: "sabotage",
+    label: "Sabotage their operation",
+    desc: "Stall their rigs and pick up the contracts they drop. High payoff if it lands.",
+    cost: { cash: 800 },
+    baseSuccess: 0.55,
+    reward: { cash: 2400, crude: 40 },
+    failurePenalty: { resource: "crude", mult: 0.6, ticks: 15 },
   },
 ];
 

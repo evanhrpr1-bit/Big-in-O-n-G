@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { Beaker, ChevronDown, Hammer, Map, ScrollText, Store, RotateCcw } from "lucide-react";
+import {
+  Beaker,
+  ChevronDown,
+  Hammer,
+  Map,
+  ScrollText,
+  Store,
+  Users,
+  RotateCcw,
+} from "lucide-react";
 import { ResourceBar } from "./components/ResourceBar";
 import { BuildPalette } from "./components/BuildPalette";
 import { Grid } from "./components/Grid";
@@ -8,6 +17,7 @@ import { TechTree } from "./components/TechTree";
 import { QuestLog } from "./components/QuestLog";
 import { Market } from "./components/Market";
 import { ContinentMap } from "./components/ContinentMap";
+import { CartelPanel } from "./components/CartelPanel";
 import { EraPanel } from "./components/EraPanel";
 import { EffectsBar } from "./components/EffectsBar";
 import { IncidentModal } from "./components/IncidentModal";
@@ -17,14 +27,15 @@ import { ERAS, INCIDENT_CHECK_MS, MARKET, QUESTS, TICK_MS } from "./game/data";
 import { eraAdvancement, isQuestComplete, useGame } from "./game/store";
 import type { BuildingTypeKey } from "./game/types";
 
-type View = "build" | "research" | "quests" | "market" | "map";
+type View = "build" | "research" | "quests" | "market" | "map" | "cartel";
 
 const TABS: { id: View; label: string; icon: typeof Hammer; active: string }[] = [
   { id: "build", label: "Build", icon: Hammer, active: "#C1440E" },
-  { id: "research", label: "Research", icon: Beaker, active: "#6E8CA0" },
+  { id: "research", label: "Tech", icon: Beaker, active: "#6E8CA0" },
   { id: "quests", label: "Quests", icon: ScrollText, active: "#E3A857" },
   { id: "market", label: "Market", icon: Store, active: "#5B7B6E" },
   { id: "map", label: "Map", icon: Map, active: "#8A5CF6" },
+  { id: "cartel", label: "Cartel", icon: Users, active: "#6E8CA0" },
 ];
 
 export default function App() {
@@ -162,6 +173,8 @@ export default function App() {
       {view === "market" && <Market showToast={showToast} />}
 
       {view === "map" && <ContinentMap showToast={showToast} />}
+
+      {view === "cartel" && <CartelPanel showToast={showToast} />}
 
       {selectedCell !== null && view === "build" && (
         <SelectedPanel

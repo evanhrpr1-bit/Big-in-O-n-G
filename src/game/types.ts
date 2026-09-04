@@ -97,6 +97,50 @@ export type BuildingTypeKey =
   | "lngTerminal"
   | "solarPlant";
 
+/** A cartel (guild) the player can join for cooperative bonuses. */
+export interface Cartel {
+  id: string;
+  name: string;
+  motto: string;
+  /** Cash dues paid on joining. */
+  dues: number;
+  /** Bonus granted to members, scaling with cartel standing level. */
+  bonus:
+    | { kind: "production"; resource: ResourceKey; perLevel: number }
+    | { kind: "market"; perLevel: number };
+  /** Contribution points required per standing level. */
+  contributionPerLevel: number;
+  maxLevel: number;
+}
+
+/** A rival company that can be targeted by cartel operations. */
+export interface Rival {
+  id: string;
+  name: string;
+  blurb: string;
+  /** Subtracted from an operation's success chance. */
+  difficulty: number;
+  /** Scales both the cost and the payoff of operations against them. */
+  rewardScale: number;
+  /** Minimum era index before this rival can be targeted. */
+  minEra: number;
+}
+
+/** An approach for running an operation against a rival. */
+export interface RaidApproach {
+  id: "sabotage" | "negotiation";
+  label: string;
+  desc: string;
+  /** Base cost, scaled by the target's rewardScale. */
+  cost: Partial<Resources>;
+  /** Base success chance before difficulty and cartel backing. */
+  baseSuccess: number;
+  /** Base payoff on success, scaled by the target's rewardScale. */
+  reward: Partial<Resources>;
+  /** Production penalty incurred when the operation fails. */
+  failurePenalty: { resource: ResourceKey; mult: number; ticks: number };
+}
+
 /** A temporary production penalty from an operational incident. */
 export interface ActiveEffect {
   /** Unique instance id (an incident can fire more than once). */
