@@ -754,6 +754,21 @@ export function makeEmptyGrid(): (null)[] {
   return Array.from({ length: GRID_SIZE * GRID_SIZE }, () => null);
 }
 
+/** Fraction of the cash sunk into a building that selling returns. */
+export const SELL_REFUND = 0.5;
+
+/** Total cash spent on a building: its purchase plus every upgrade so far. */
+export function investedIn(type: BuildingType, level: number): number {
+  let total = type.cost;
+  for (let l = 1; l < level; l++) total += upgradeCostFor(type, l);
+  return total;
+}
+
+/** What selling a building at this level pays back. */
+export function refundFor(type: BuildingType, level: number): number {
+  return Math.floor(investedIn(type, level) * SELL_REFUND);
+}
+
 /** Cash cost to upgrade a building from its current level. */
 export function upgradeCostFor(type: BuildingType, level: number): number {
   return Math.round(type.cost * 0.6 * Math.pow(1.6, level - 1));

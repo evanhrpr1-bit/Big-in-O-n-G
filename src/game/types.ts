@@ -55,6 +55,8 @@ export interface BuildingType {
 export interface PlacedBuilding {
   type: BuildingTypeKey;
   level: number;
+  /** Quarter turns clockwise, 0–3. Absent on saves made before rotation. */
+  rotation?: number;
 }
 
 /** A node in the research tree. */

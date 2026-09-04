@@ -13,6 +13,8 @@ const FLAME = "#E3A857";
 interface Props {
   type: BuildingTypeKey;
   level: number;
+  /** Quarter turns clockwise. */
+  rotation?: number;
 }
 
 /**
@@ -20,13 +22,13 @@ interface Props {
  * stylised low-poly, so the whole catalogue ships without external art assets.
  * Each structure is built around the palette colour its 2D icon already uses.
  */
-export function Building3D({ type, level }: Props) {
+export function Building3D({ type, level, rotation = 0 }: Props) {
   const color = BUILDING_TYPES[type].color;
   // Taller with each level, easing off so level 10 doesn't tower absurdly.
   const grow = 1 + Math.min(level - 1, 9) * 0.06;
 
   return (
-    <group scale={[1, grow, 1]}>
+    <group scale={[1, grow, 1]} rotation={[0, (rotation * Math.PI) / 2, 0]}>
       {renderBuilding(type, color)}
     </group>
   );

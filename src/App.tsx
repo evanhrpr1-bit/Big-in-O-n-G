@@ -59,6 +59,7 @@ export default function App() {
   const [selectedType, setSelectedType] = useState<BuildingTypeKey>("derrick");
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
   const [eraOpen, setEraOpen] = useState(false);
+  const [buildRotation, setBuildRotation] = useState(0);
 
   const tick = useGame((s) => s.tick);
   const marketTick = useGame((s) => s.marketTick);
@@ -122,6 +123,15 @@ export default function App() {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [settleOffline]);
+
+  // R turns the next building, the way most builders do it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "r" || e.key === "R") setBuildRotation((r) => (r + 1) % 4);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   function handleReset() {
     if (window.confirm("Wipe your save and start a new empire?")) {
@@ -196,6 +206,8 @@ export default function App() {
           <BuildPalette
             selectedType={selectedType}
             onSelect={setSelectedType}
+            rotation={buildRotation}
+            onRotate={() => setBuildRotation((r) => (r + 1) % 4)}
             showToast={showToast}
           />
           <Suspense
@@ -210,6 +222,7 @@ export default function App() {
           >
             <Scene3D
               selectedType={selectedType}
+              buildRotation={buildRotation}
               selectedCell={selectedCell}
               onInspect={setSelectedCell}
               showToast={showToast}

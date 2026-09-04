@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Lock } from "lucide-react";
+import { Check, ChevronDown, Lock, RotateCw } from "lucide-react";
 import { BUILDING_ERA, BUILDING_TYPES, ERAS, TECHS } from "../game/data";
 import { useGame } from "../game/store";
 import { BuildingSprite } from "./BuildingSprite";
@@ -8,12 +8,15 @@ import type { BuildingTypeKey } from "../game/types";
 interface Props {
   selectedType: BuildingTypeKey;
   onSelect: (type: BuildingTypeKey) => void;
+  /** Quarter turns applied to the next building placed. */
+  rotation: number;
+  onRotate: () => void;
   showToast: (msg: string) => void;
 }
 
 const ALL = Object.keys(BUILDING_TYPES) as BuildingTypeKey[];
 
-export function BuildPalette({ selectedType, onSelect, showToast }: Props) {
+export function BuildPalette({ selectedType, onSelect, rotation, onRotate, showToast }: Props) {
   const researchedTechs = useGame((s) => s.researchedTechs);
   const era = useGame((s) => s.era);
   const [open, setOpen] = useState(false);
@@ -46,11 +49,11 @@ export function BuildPalette({ selectedType, onSelect, showToast }: Props) {
   }
 
   return (
-    <div ref={root} className="relative max-w-md mx-auto mb-4">
+    <div ref={root} className="relative max-w-md mx-auto mb-4 flex gap-2">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="w-full border border-hair bg-panel rounded-md px-3 py-2.5 flex items-center gap-2.5"
+        className="flex-1 min-w-0 border border-hair bg-panel rounded-md px-3 py-2.5 flex items-center gap-2.5"
       >
         <BuildingSprite type={selectedType} size={22} color={selected.color} />
         <span className="flex flex-col items-start min-w-0 leading-tight">
@@ -67,8 +70,18 @@ export function BuildPalette({ selectedType, onSelect, showToast }: Props) {
         />
       </button>
 
+      {/* Orientation for the next placement; R does the same */}
+      <button
+        onClick={onRotate}
+        title="Rotate the next building (R)"
+        className="shrink-0 border border-hair bg-panel rounded-md px-3 flex flex-col items-center justify-center text-[#B7B0A2]"
+      >
+        <RotateCw size={16} />
+        <span className="text-[9px] tabular-nums mt-0.5">{rotation * 90}°</span>
+      </button>
+
       {open && (
-        <div className="absolute z-30 mt-1 w-full max-h-[19rem] overflow-y-auto rounded-md border border-hair bg-crude shadow-lg">
+        <div className="absolute z-30 top-full mt-1 w-full max-h-[19rem] overflow-y-auto rounded-md border border-hair bg-crude shadow-lg">
           {ERAS.map((eraDef, eraIndex) => {
             const inEra = ALL.filter((k) => BUILDING_ERA[k] === eraIndex);
             if (inEra.length === 0) return null;

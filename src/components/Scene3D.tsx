@@ -9,6 +9,7 @@ import type { BuildingTypeKey, PlacedBuilding } from "../game/types";
 
 interface Props {
   selectedType: BuildingTypeKey;
+  buildRotation: number;
   selectedCell: number | null;
   onInspect: (index: number) => void;
   showToast: (msg: string) => void;
@@ -18,6 +19,25 @@ const TILE = 1;
 /** The view the board opens on, and the one Recentre returns to. */
 const HOME_POSITION: [number, number, number] = [4.6, 5.0, 4.6];
 const HOME_TARGET: [number, number, number] = [0, 0.2, 0];
+
+/**
+ * Lot border scheme. Each state reads as a different colour so the board can be
+ * scanned at a glance: what's free, what's under the cursor, what's selected,
+ * and what's cut off from its supply.
+ */
+const EDGE = {
+  empty: "#4A4335",
+  hover: "#E3A857",
+  selected: "#EDE6D6",
+  starved: "#C1440E",
+} as const;
+
+/** Fills beneath the border, kept a shade apart so the grid reads. */
+const LOT = {
+  empty: "#2E2A23",
+  hover: "#3E382E",
+  occupied: "#3B362E",
+} as const;
 /** Centre the board on the origin so the camera can orbit around it. */
 const OFFSET = (GRID_SIZE - 1) / 2;
 
@@ -28,7 +48,7 @@ function tilePosition(index: number): [number, number, number] {
   return [(col - OFFSET) * TILE, 0, (row - OFFSET) * TILE];
 }
 
-export function Scene3D({ selectedType, selectedCell, onInspect, showToast }: Props) {
+export function Scene3D({ selectedType, buildRotation, selectedCell, onInspect, showToast }: Props) {
   const grid = useGame((s) => s.grid);
   const build = useGame((s) => s.build);
   const supplied = suppliedIndices(grid);
@@ -68,7 +88,7 @@ export function Scene3D({ selectedType, selectedCell, onInspect, showToast }: Pr
 
   function handleTileClick(index: number) {
     if (grid[index]) onInspect(index);
-    else showToast(build(index, selectedType));
+    else showToast(build(index, selectedType, buildRotation));
   }
 
   return (
@@ -170,14 +190,17 @@ interface TileProps {
 function Tile({ index, cell, starved, isSelected, isHovered, onHover, onClick }: TileProps) {
   const [x, , z] = tilePosition(index);
   // A starved plant rings red instead of its own colour.
-  const accent = cell ? (starved ? "#C1440E" : BUILDING_TYPES[cell.type].color) : null;
-  const lotColor = isSelected
-    ? "#EDE6D6"
-    : isHovered
-      ? "#4A443A"
+  // Border takes the most urgent state; the fill stays quiet underneath.
+  const edgeColor = isSelected
+    ? EDGE.selected
+    : starved
+      ? EDGE.starved
       : cell
-        ? "#3B362E"
-        : "#2E2A23";
+        ? BUILDING_TYPES[cell.type].color
+        : isHovered
+          ? EDGE.hover
+          : EDGE.empty;
+  const lotColor = isHovered ? LOT.hover : cell ? LOT.occupied : LOT.empty;
 
   return (
     <group position={[x, 0, z]}>
@@ -203,15 +226,29 @@ function Tile({ index, cell, starved, isSelected, isHovered, onHover, onClick }:
         <meshStandardMaterial color={lotColor} roughness={0.95} />
       </mesh>
 
-      {/* Thin ring in the building's colour, so occupied lots read at a glance */}
-      {accent && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.025, 0]}>
-          <ringGeometry args={[TILE * 0.4, TILE * 0.47, 4]} />
-          <meshBasicMaterial color={accent} transparent opacity={0.75} />
+      {/* Square outline around the lot, coloured by state */}
+      {[
+        [0, -TILE * 0.46],
+        [0, TILE * 0.46],
+      ].map(([x, z], i) => (
+        <mesh key={`h${i}`} position={[x, 0.026, z]}>
+          <boxGeometry args={[TILE * 0.94, 0.012, 0.022]} />
+          <meshBasicMaterial color={edgeColor} transparent opacity={cell || isSelected ? 0.9 : 0.5} />
         </mesh>
-      )}
+      ))}
+      {[
+        [-TILE * 0.46, 0],
+        [TILE * 0.46, 0],
+      ].map(([x, z], i) => (
+        <mesh key={`v${i}`} position={[x, 0.026, z]}>
+          <boxGeometry args={[0.022, 0.012, TILE * 0.94]} />
+          <meshBasicMaterial color={edgeColor} transparent opacity={cell || isSelected ? 0.9 : 0.5} />
+        </mesh>
+      ))}
 
-      {cell && <Building3D type={cell.type} level={cell.level} />}
+      {cell && (
+        <Building3D type={cell.type} level={cell.level} rotation={cell.rotation ?? 0} />
+      )}
     </group>
   );
 }

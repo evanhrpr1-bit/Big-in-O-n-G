@@ -35,6 +35,7 @@ import {
   TECHS,
   TICK_MS,
   makeEmptyGrid,
+  refundFor,
   scaleCost,
   startingPrices,
   upgradeCostFor,
@@ -168,7 +169,11 @@ export interface GameState {
   /** Clear the welcome-back summary. */
   dismissOfflineReport: () => void;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
-  build: (index: number, type: BuildingTypeKey) => string;
+  build: (index: number, type: BuildingTypeKey, rotation?: number) => string;
+  /** Turn the building at `index` a quarter turn clockwise. */
+  rotateBuilding: (index: number) => string;
+  /** Demolish the building at `index`, refunding part of its cost. */
+  sellBuilding: (index: number) => string;
   /** Upgrade the building at `index`. Returns a status message. */
   upgrade: (index: number) => string;
   /** Research a tech node. Returns a status message. */
@@ -1060,7 +1065,7 @@ export const useGame = create<GameState>()(
 
       dismissOfflineReport: () => set({ offlineReport: null }),
 
-      build: (index, type) => {
+      build: (index, type, rotation = 0) => {
         const state = get();
         if (state.grid[index]) return "That lot is already occupied";
         const meta = BUILDING_TYPES[type];
@@ -1074,12 +1079,37 @@ export const useGame = create<GameState>()(
           return `Not enough cash for a ${meta.name}`;
         }
         const grid = [...state.grid];
-        grid[index] = { type, level: 1 };
+        grid[index] = { type, level: 1, rotation: ((rotation % 4) + 4) % 4 };
         set({
           grid,
           resources: { ...state.resources, cash: state.resources.cash - meta.cost },
         });
         return `${meta.name} built`;
+      },
+
+      rotateBuilding: (index) => {
+        const state = get();
+        const cell = state.grid[index];
+        if (!cell) return "Nothing to rotate";
+        const grid = [...state.grid];
+        grid[index] = { ...cell, rotation: (((cell.rotation ?? 0) + 1) % 4) };
+        set({ grid });
+        return `${BUILDING_TYPES[cell.type].name} turned`;
+      },
+
+      sellBuilding: (index) => {
+        const state = get();
+        const cell = state.grid[index];
+        if (!cell) return "Nothing to sell";
+        const meta = BUILDING_TYPES[cell.type];
+        const refund = refundFor(meta, cell.level);
+        const grid = [...state.grid];
+        grid[index] = null;
+        set({
+          grid,
+          resources: { ...state.resources, cash: state.resources.cash + refund },
+        });
+        return `${meta.name} sold for $${refund.toLocaleString()}`;
       },
 
       upgrade: (index) => {
