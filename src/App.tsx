@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Hammer,
   Map,
+  Radar,
   ScrollText,
   Store,
   Users,
@@ -18,6 +19,7 @@ import { QuestLog } from "./components/QuestLog";
 import { Market } from "./components/Market";
 import { ContinentMap } from "./components/ContinentMap";
 import { CartelPanel } from "./components/CartelPanel";
+import { FleetPanel } from "./components/FleetPanel";
 import { EraPanel } from "./components/EraPanel";
 import { EffectsBar } from "./components/EffectsBar";
 import { IncidentModal } from "./components/IncidentModal";
@@ -27,7 +29,7 @@ import { ERAS, INCIDENT_CHECK_MS, MARKET, QUESTS, TICK_MS } from "./game/data";
 import { eraAdvancement, isQuestComplete, useGame } from "./game/store";
 import type { BuildingTypeKey } from "./game/types";
 
-type View = "build" | "research" | "quests" | "market" | "map" | "cartel";
+type View = "build" | "research" | "quests" | "market" | "map" | "cartel" | "fleet";
 
 const TABS: { id: View; label: string; icon: typeof Hammer; active: string }[] = [
   { id: "build", label: "Build", icon: Hammer, active: "#C1440E" },
@@ -36,6 +38,7 @@ const TABS: { id: View; label: string; icon: typeof Hammer; active: string }[] =
   { id: "market", label: "Market", icon: Store, active: "#5B7B6E" },
   { id: "map", label: "Map", icon: Map, active: "#8A5CF6" },
   { id: "cartel", label: "Cartel", icon: Users, active: "#6E8CA0" },
+  { id: "fleet", label: "Fleet", icon: Radar, active: "#B98CD6" },
 ];
 
 export default function App() {
@@ -48,6 +51,7 @@ export default function App() {
   const tick = useGame((s) => s.tick);
   const marketTick = useGame((s) => s.marketTick);
   const incidentTick = useGame((s) => s.incidentTick);
+  const marabouTick = useGame((s) => s.marabouTick);
   const reset = useGame((s) => s.reset);
   const era = useGame((s) => s.era);
 
@@ -81,6 +85,12 @@ export default function App() {
     const id = setInterval(incidentTick, INCIDENT_CHECK_MS);
     return () => clearInterval(id);
   }, [incidentTick]);
+
+  // Marabou trickle. Checked often, but only grants on its own slow schedule.
+  useEffect(() => {
+    const id = setInterval(marabouTick, 5000);
+    return () => clearInterval(id);
+  }, [marabouTick]);
 
   function handleReset() {
     if (window.confirm("Wipe your save and start a new empire?")) {
@@ -123,8 +133,8 @@ export default function App() {
 
       <EffectsBar />
 
-      {/* View tabs */}
-      <div className="flex gap-2 mb-4">
+      {/* View tabs — a grid so the nav wraps cleanly as sections are added */}
+      <div className="grid grid-cols-4 gap-2 mb-4">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = view === tab.id;
@@ -137,7 +147,7 @@ export default function App() {
                 backgroundColor: isActive ? tab.active : "#252320",
                 color: isActive ? "#1B1A17" : "#EDE6D6",
               }}
-              className="relative flex-1 min-w-0 rounded-md py-2 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-[11px] sm:text-sm font-medium"
+              className="relative min-w-0 rounded-md py-2 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-[11px] sm:text-sm font-medium"
             >
               <Icon size={14} className="shrink-0" /> {tab.label}
               {showBadge && (
@@ -175,6 +185,8 @@ export default function App() {
       {view === "map" && <ContinentMap showToast={showToast} />}
 
       {view === "cartel" && <CartelPanel showToast={showToast} />}
+
+      {view === "fleet" && <FleetPanel showToast={showToast} />}
 
       {selectedCell !== null && view === "build" && (
         <SelectedPanel

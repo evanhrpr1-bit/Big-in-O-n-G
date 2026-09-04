@@ -6,9 +6,16 @@ import {
   CARTELS,
   CARTEL_BACKING_PER_LEVEL,
   ERAS,
+  FLEET_PURCHASE,
   INCIDENTS,
   INCIDENT_CHANCE,
+  MARABOU_TRICKLE_AMOUNT,
+  MARABOU_TRICKLE_MS,
   MARKET,
+  RUSH_MS_PER_MARABOU,
+  SALVAGE_OPTIONS,
+  SURVEY_OPTIONS,
+  fleetUnitCost,
   RAID_APPROACHES,
   RAID_COOLDOWN_MS,
   RESEARCH_CONTRIBUTION_RATE,
@@ -28,6 +35,8 @@ import type {
   ActiveEffect,
   ActiveIncident,
   BuildingTypeKey,
+  Fleet,
+  FleetKind,
   Incident,
   MarketEvent,
   MarketPrices,
@@ -48,7 +57,21 @@ const NEUTRAL_BONUSES: ProductionBonuses = {
   gas: 1,
   fuel: 1,
   research: 1,
+  marabou: 1,
 };
+
+/** A fresh starting fleet: one sonar boat and one diver. */
+function startingFleet(): Fleet {
+  return {
+    sonar: [{ id: "sonar-1", mission: null }],
+    divers: [{ id: "diver-1", mission: null }],
+  };
+}
+
+/** Random integer in [min, max]. */
+function randBetween(min: number, max: number): number {
+  return Math.floor(min + Math.random() * (max - min + 1));
+}
 
 export interface GameState {
   resources: Resources;
@@ -78,6 +101,10 @@ export interface GameState {
   cartelBonuses: ProductionBonuses;
   /** Timestamp before which no further rival operation may be run. */
   raidCooldownUntil: number;
+  /** Mobile units: sonar boats and divers. */
+  fleet: Fleet;
+  /** Timestamp of the next passive Marabou trickle. */
+  nextMarabouAt: number;
 
   /** Advance production by one tick. */
   tick: () => void;
@@ -103,6 +130,18 @@ export interface GameState {
   contributeToCartel: (resource: "cash" | "research", amount: number) => string;
   /** Run an operation against a rival. Resolves immediately win or lose. */
   runRaid: (rivalId: string, approachId: string) => string;
+  /** Grant the passive Marabou trickle when its interval has elapsed. */
+  marabouTick: () => void;
+  /** Send a sonar boat out on a survey of the given duration. */
+  launchSurvey: (unitId: string, durationKey: string) => string;
+  /** Send a diver on a salvage run of the given duration. */
+  launchSalvage: (unitId: string, durationKey: string) => string;
+  /** Collect a finished mission, applying its rewards. */
+  collectMission: (kind: FleetKind, unitId: string) => string;
+  /** Spend Marabou to finish an in-progress mission immediately. */
+  rushMission: (kind: FleetKind, unitId: string) => string;
+  /** Buy another fleet unit with cash or Marabou. */
+  buyFleetUnit: (kind: FleetKind, payWith: "cash" | "marabou") => string;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
   build: (index: number, type: BuildingTypeKey) => string;
   /** Upgrade the building at `index`. Returns a status message. */
@@ -217,6 +256,8 @@ export const useGame = create<GameState>()(
       cartelContribution: 0,
       cartelBonuses: { ...NEUTRAL_BONUSES },
       raidCooldownUntil: 0,
+      fleet: startingFleet(),
+      nextMarabouAt: Date.now() + MARABOU_TRICKLE_MS,
 
       tick: () =>
         set((state) => {
@@ -546,6 +587,170 @@ export const useGame = create<GameState>()(
           : `${rival.name} walked away from the table — and talked.`;
       },
 
+      marabouTick: () =>
+        set((state) => {
+          if (Date.now() < state.nextMarabouAt) return {};
+          return {
+            resources: {
+              ...state.resources,
+              marabou: state.resources.marabou + MARABOU_TRICKLE_AMOUNT,
+            },
+            nextMarabouAt: Date.now() + MARABOU_TRICKLE_MS,
+          };
+        }),
+
+      launchSurvey: (unitId, durationKey) => {
+        const state = get();
+        const unit = state.fleet.sonar.find((u) => u.id === unitId);
+        if (!unit) return "Unknown sonar boat";
+        if (unit.mission) return "That boat is already at sea";
+        const option = SURVEY_OPTIONS.find((o) => o.key === durationKey);
+        if (!option) return "Unknown survey length";
+        if (state.resources.cash < option.cost) {
+          return `Not enough cash to launch a ${option.label.toLowerCase()}`;
+        }
+        set({
+          resources: { ...state.resources, cash: state.resources.cash - option.cost },
+          fleet: {
+            ...state.fleet,
+            sonar: state.fleet.sonar.map((u) =>
+              u.id === unitId
+                ? { ...u, mission: { durationKey, returnAt: Date.now() + option.ms } }
+                : u,
+            ),
+          },
+        });
+        return `${option.label} underway`;
+      },
+
+      launchSalvage: (unitId, durationKey) => {
+        const state = get();
+        const unit = state.fleet.divers.find((u) => u.id === unitId);
+        if (!unit) return "Unknown diver";
+        if (unit.mission) return "That diver is already down";
+        const option = SALVAGE_OPTIONS.find((o) => o.key === durationKey);
+        if (!option) return "Unknown dive length";
+        // Salvage runs into a leased region when one is held, else open water.
+        const regionId = state.leasedRegions[0];
+        set({
+          fleet: {
+            ...state.fleet,
+            divers: state.fleet.divers.map((u) =>
+              u.id === unitId
+                ? { ...u, mission: { durationKey, returnAt: Date.now() + option.ms, regionId } }
+                : u,
+            ),
+          },
+        });
+        return `${option.label} underway`;
+      },
+
+      collectMission: (kind, unitId) => {
+        const state = get();
+        const unit = state.fleet[kind].find((u) => u.id === unitId);
+        if (!unit || !unit.mission) return "Nothing to collect";
+        if (Date.now() < unit.mission.returnAt) return "Still out on mission";
+
+        const resources = { ...state.resources };
+        let scoutedRegions = state.scoutedRegions;
+        let message: string;
+
+        if (kind === "sonar") {
+          const option =
+            SURVEY_OPTIONS.find((o) => o.key === unit.mission!.durationKey) ?? SURVEY_OPTIONS[0];
+          // Fields the player could act on but hasn't surveyed yet.
+          const undiscovered = REGIONS.filter(
+            (r) => !state.scoutedRegions.includes(r.id) && state.era >= r.era,
+          );
+          if (undiscovered.length > 0 && Math.random() < option.discoverChance) {
+            const found = undiscovered[Math.floor(Math.random() * undiscovered.length)];
+            scoutedRegions = [...state.scoutedRegions, found.id];
+            message = `Sonar contact — ${found.name} charted`;
+          } else {
+            // No field found (or none left): return a resource cache instead.
+            const cash = Math.round(randBetween(200, 500) * option.cacheScale);
+            const crude = Math.round(randBetween(15, 40) * option.cacheScale);
+            resources.cash += cash;
+            resources.crude += crude;
+            message = `No new field — recovered a cache worth $${cash} and ${crude} crude`;
+          }
+        } else {
+          const option =
+            SALVAGE_OPTIONS.find((o) => o.key === unit.mission!.durationKey) ?? SALVAGE_OPTIONS[0];
+          const cash = randBetween(option.cash[0], option.cash[1]);
+          const crude = randBetween(option.crude[0], option.crude[1]);
+          resources.cash += cash;
+          resources.crude += crude;
+          const gotMarabou = Math.random() < option.marabouChance;
+          if (gotMarabou) resources.marabou += 1;
+          message = gotMarabou
+            ? `Salvage: $${cash}, ${crude} crude — and a Marabou in the wreck`
+            : `Salvage: $${cash} and ${crude} crude`;
+        }
+
+        set({
+          resources,
+          scoutedRegions,
+          fleet: {
+            ...state.fleet,
+            [kind]: state.fleet[kind].map((u) =>
+              u.id === unitId ? { ...u, mission: null } : u,
+            ),
+          },
+        });
+        return message;
+      },
+
+      rushMission: (kind, unitId) => {
+        const state = get();
+        const unit = state.fleet[kind].find((u) => u.id === unitId);
+        if (!unit || !unit.mission) return "Nothing to rush";
+        const remaining = unit.mission.returnAt - Date.now();
+        if (remaining <= 0) return "That mission is already back";
+        const price = Math.max(1, Math.ceil(remaining / RUSH_MS_PER_MARABOU));
+        if (state.resources.marabou < price) {
+          return `Rushing costs ${price} Marabou`;
+        }
+        set({
+          resources: { ...state.resources, marabou: state.resources.marabou - price },
+          fleet: {
+            ...state.fleet,
+            [kind]: state.fleet[kind].map((u) =>
+              u.id === unitId ? { ...u, mission: { ...u.mission!, returnAt: Date.now() } } : u,
+            ),
+          },
+        });
+        return `Rushed home for ${price} Marabou`;
+      },
+
+      buyFleetUnit: (kind, payWith) => {
+        const state = get();
+        const owned = state.fleet[kind].length;
+        const base = FLEET_PURCHASE[kind];
+        const resources = { ...state.resources };
+        if (payWith === "cash") {
+          const price = fleetUnitCost(kind, owned);
+          if (resources.cash < price) return `Not enough cash for another ${base.label}`;
+          resources.cash -= price;
+        } else {
+          if (resources.marabou < base.marabou) {
+            return `Needs ${base.marabou} Marabou`;
+          }
+          resources.marabou -= base.marabou;
+        }
+        set({
+          resources,
+          fleet: {
+            ...state.fleet,
+            [kind]: [
+              ...state.fleet[kind],
+              { id: `${kind}-${owned + 1}-${Date.now()}`, mission: null },
+            ],
+          },
+        });
+        return `${base.label} added to your fleet`;
+      },
+
       build: (index, type) => {
         const state = get();
         if (state.grid[index]) return "That lot is already occupied";
@@ -640,11 +845,13 @@ export const useGame = create<GameState>()(
           cartelContribution: 0,
           cartelBonuses: { ...NEUTRAL_BONUSES },
           raidCooldownUntil: 0,
+          fleet: startingFleet(),
+          nextMarabouAt: Date.now() + MARABOU_TRICKLE_MS,
         }),
     }),
     {
       name: "black-gold-empire",
-      version: 6,
+      version: 7,
       // Only persist durable game state — not action functions or transient
       // market events (those start fresh each session).
       partialize: (state) => ({
@@ -662,6 +869,8 @@ export const useGame = create<GameState>()(
         cartelId: state.cartelId,
         cartelContribution: state.cartelContribution,
         raidCooldownUntil: state.raidCooldownUntil,
+        fleet: state.fleet,
+        nextMarabouAt: state.nextMarabouAt,
       }),
       // Backfill fields added in later versions for older saves.
       migrate: (persisted, _version) => {
@@ -675,6 +884,14 @@ export const useGame = create<GameState>()(
         if (state.cartelId === undefined) state.cartelId = null;
         if (typeof state.cartelContribution !== "number") state.cartelContribution = 0;
         if (typeof state.raidCooldownUntil !== "number") state.raidCooldownUntil = 0;
+        // Pre-expansion saves have no marabou balance, fleet, or trickle clock.
+        if (state.resources && typeof state.resources.marabou !== "number") {
+          state.resources.marabou = STARTING_RESOURCES.marabou;
+        }
+        if (!state.fleet) state.fleet = startingFleet();
+        if (typeof state.nextMarabouAt !== "number") {
+          state.nextMarabouAt = Date.now() + MARABOU_TRICKLE_MS;
+        }
         return state as GameState;
       },
       // Rehydrate derived bonuses from the saved tech and lease lists.
@@ -690,6 +907,13 @@ export const useGame = create<GameState>()(
         if (state.cartelId === undefined) state.cartelId = null;
         if (typeof state.cartelContribution !== "number") state.cartelContribution = 0;
         if (typeof state.raidCooldownUntil !== "number") state.raidCooldownUntil = 0;
+        if (state.resources && typeof state.resources.marabou !== "number") {
+          state.resources.marabou = STARTING_RESOURCES.marabou;
+        }
+        if (!state.fleet) state.fleet = startingFleet();
+        if (typeof state.nextMarabouAt !== "number") {
+          state.nextMarabouAt = Date.now() + MARABOU_TRICKLE_MS;
+        }
         state.regionBonuses = regionBonusesFrom(state.leasedRegions);
         state.cartelBonuses = cartelBonusesFrom(state.cartelId, state.cartelContribution);
       },

@@ -7,6 +7,7 @@ import {
   Beaker,
   Cog,
   Gauge,
+  Gem,
   Ship,
   Sun,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import type {
   BuildingTypeKey,
   Cartel,
   Era,
+  FleetKind,
   Incident,
   MarketPrices,
   Quest,
@@ -23,7 +25,9 @@ import type {
   ResourceKey,
   Resources,
   Rival,
+  SalvageOption,
   SellableResource,
+  SurveyOption,
   Tech,
 } from "./types";
 import type { LucideIcon } from "lucide-react";
@@ -43,6 +47,8 @@ export const STARTING_RESOURCES = {
   gas: 0,
   fuel: 0,
   research: 0,
+  // A small seed of premium currency so the player can try a rush once.
+  marabou: 3,
 } as const;
 
 export const BUILDING_TYPES: Record<BuildingTypeKey, BuildingType> = {
@@ -149,6 +155,7 @@ export const RESOURCE_META: Record<
   gas: { label: "Gas", icon: Flame, color: "#5B7B6E" },
   fuel: { label: "Fuel", icon: Factory, color: "#EDE6D6" },
   research: { label: "Research", icon: Beaker, color: "#6E8CA0" },
+  marabou: { label: "Marabou", icon: Gem, color: "#B98CD6" },
 };
 
 export const TECHS: Tech[] = [
@@ -235,6 +242,98 @@ export const ERAS: Era[] = [
     unlocks: ["solarPlant"],
   },
 ];
+
+// ---- Fleet: sonar boats & divers ----
+
+/**
+ * The design spec expresses mission lengths in real hours (2h / 8h / 24h). This
+ * game runs on a 2-second production tick, so hour-long timers would be wildly
+ * out of step with the rest of its pacing. Durations below are compressed to
+ * the same *shape* — short / medium / long — at a scale that matches the game.
+ * Each option records the spec duration it stands in for, so restoring
+ * real-time pacing is just a matter of changing `ms`.
+ */
+export const SURVEY_OPTIONS: SurveyOption[] = [
+  {
+    key: "short",
+    label: "Short sweep",
+    specLabel: "2h",
+    ms: 45000,
+    cost: 300,
+    discoverChance: 0.45,
+    cacheScale: 1,
+  },
+  {
+    key: "standard",
+    label: "Standard survey",
+    specLabel: "8h",
+    ms: 120000,
+    cost: 900,
+    discoverChance: 0.7,
+    cacheScale: 2.2,
+  },
+  {
+    key: "deep",
+    label: "Deep survey",
+    specLabel: "24h",
+    ms: 300000,
+    cost: 2000,
+    discoverChance: 0.95,
+    cacheScale: 4.5,
+  },
+];
+
+export const SALVAGE_OPTIONS: SalvageOption[] = [
+  {
+    key: "quick",
+    label: "Quick dive",
+    specLabel: "30m",
+    ms: 20000,
+    cash: [150, 400],
+    crude: [10, 30],
+    marabouChance: 0.03,
+  },
+  {
+    key: "standard",
+    label: "Standard run",
+    specLabel: "2h",
+    ms: 45000,
+    cash: [500, 1200],
+    crude: [30, 80],
+    marabouChance: 0.08,
+  },
+  {
+    key: "deep",
+    label: "Deep salvage",
+    specLabel: "6h",
+    ms: 120000,
+    cash: [1500, 3200],
+    crude: [80, 200],
+    marabouChance: 0.18,
+  },
+];
+
+/** Marabou trickles in slowly — the spec's "every few hours", compressed. */
+export const MARABOU_TRICKLE_MS = 120000;
+export const MARABOU_TRICKLE_AMOUNT = 1;
+
+/** One Marabou rushes this much remaining mission time. */
+export const RUSH_MS_PER_MARABOU = 30000;
+
+/** Base purchase costs for new fleet units; each one owned raises the price. */
+export const FLEET_PURCHASE: Record<
+  FleetKind,
+  { label: string; cash: number; marabou: number; growth: number }
+> = {
+  sonar: { label: "Sonar Boat", cash: 2500, marabou: 5, growth: 1.6 },
+  divers: { label: "Deep Sea Diver", cash: 1200, marabou: 3, growth: 1.5 },
+};
+
+/** Cash cost of the next unit of a kind, given how many are already owned. */
+export function fleetUnitCost(kind: FleetKind, owned: number): number {
+  const base = FLEET_PURCHASE[kind];
+  return Math.round(base.cash * Math.pow(base.growth, Math.max(0, owned - 1)));
+}
 
 // ---- Cartels & rival operations ----
 

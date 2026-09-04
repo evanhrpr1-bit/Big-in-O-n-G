@@ -5,7 +5,7 @@ import type { ResourceKey } from "../game/types";
 export function ResourceBar() {
   const resources = useGame((s) => s.resources);
   return (
-    <div className="grid grid-cols-5 gap-2 mb-4">
+    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
       {(Object.entries(RESOURCE_META) as [ResourceKey, (typeof RESOURCE_META)[ResourceKey]][]).map(
         ([key, meta]) => {
           const Icon = meta.icon;

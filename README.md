@@ -40,6 +40,11 @@ npm run lint     # type-check only
 - **Market** — sell crude, gas, and refined fuel for cash at live prices that
   drift every few seconds. Random **price spikes and crashes** reward timing your
   trades. This closes the economic loop: production → market → cash → expansion.
+- **Fleet** — mobile units, plus **Marabou**, the premium currency. Send **sonar
+  boats** on survey missions to chart new oil fields, and **deep sea divers** on
+  salvage runs for cash, crude, and the occasional rare Marabou. Sonar boats run
+  one mission at a time; divers run in parallel. Any mission can be rushed home
+  with Marabou. Buy more units with cash or Marabou.
 - **Cartel** — join one of three cartels for a cooperative bonus that grows with
   your standing: crude output, research output, or market sale prices. Contribute
   cash or research points to raise standing (up to level 5). Membership also
@@ -81,10 +86,22 @@ src/
 
 ## Roadmap
 
-All systems from the design spec are now implemented. Cartels and rival
+All systems from the base design spec are implemented. Cartels and rival
 operations run against AI competitors rather than real players — true
 multiplayer (shared cartels, live PvP) would need the optional Node/Postgres
 backend the spec mentions.
+
+The **Deepwater Expansion** is partially landed: Marabou, sonar boats, and
+divers are in. Still to come are the Skills tree (Marabou's main sink), ROVs
+and pipeline condition, Semi-Submersible Rigs, and Supply Boats. The latter
+three assume buildings live *inside* regions; this game keeps one shared build
+grid with regions as leases, so those mechanics need a design decision before
+implementation.
+
+Mission timers are compressed from the expansion spec's real-world hours to
+suit this game's 2-second production tick. Each mission option displays the
+spec duration it stands in for, and restoring real-time pacing means changing
+only the `ms` values in `SURVEY_OPTIONS` / `SALVAGE_OPTIONS`.
 
 The data-driven `game/` layer is structured so new buildings, techs, quests,
 eras, regions, incidents, cartels, rivals, and market tuning are added by

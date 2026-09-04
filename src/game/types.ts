@@ -1,7 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 
-/** The economic resources the player accumulates and spends. */
-export type ResourceKey = "cash" | "crude" | "gas" | "fuel" | "research";
+/** The economic resources the player accumulates and spends.
+ *  `marabou` is the premium currency: scarce, trickled slowly, never produced
+ *  by an ordinary building. */
+export type ResourceKey = "cash" | "crude" | "gas" | "fuel" | "research" | "marabou";
 
 /** Every resource total tracked in state. */
 export type Resources = Record<ResourceKey, number>;
@@ -96,6 +98,57 @@ export type BuildingTypeKey =
   | "offshoreRig"
   | "lngTerminal"
   | "solarPlant";
+
+// ---- Fleet ----
+
+/** Kinds of mobile unit the player can own. */
+export type FleetKind = "sonar" | "divers";
+
+/** A mission a fleet unit is currently running. */
+export interface FleetMission {
+  /** Which duration option was chosen, keyed into the duration tables. */
+  durationKey: string;
+  /** Timestamp at which the mission completes. */
+  returnAt: number;
+  /** Region the mission was sent to, for salvage runs. */
+  regionId?: string;
+}
+
+/** A single owned fleet unit. Idle when `mission` is null. */
+export interface FleetUnit {
+  id: string;
+  mission: FleetMission | null;
+}
+
+/** The player's fleet, grouped by unit kind. */
+export type Fleet = Record<FleetKind, FleetUnit[]>;
+
+/** A survey mission option for sonar boats. */
+export interface SurveyOption {
+  key: string;
+  label: string;
+  /** The duration this stands in for in the design spec. */
+  specLabel: string;
+  ms: number;
+  cost: number;
+  /** Chance of revealing a new field rather than returning a cache. */
+  discoverChance: number;
+  /** Scales the consolation resource cache. */
+  cacheScale: number;
+}
+
+/** A salvage mission option for divers. */
+export interface SalvageOption {
+  key: string;
+  label: string;
+  specLabel: string;
+  ms: number;
+  /** Inclusive [min, max] reward ranges. */
+  cash: [number, number];
+  crude: [number, number];
+  /** Chance of a rare Marabou drop. */
+  marabouChance: number;
+}
 
 /** A cartel (guild) the player can join for cooperative bonuses. */
 export interface Cartel {
