@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Beaker, Hammer, ScrollText, Store, RotateCcw } from "lucide-react";
+import { Beaker, ChevronDown, Hammer, ScrollText, Store, RotateCcw } from "lucide-react";
 import { ResourceBar } from "./components/ResourceBar";
 import { BuildPalette } from "./components/BuildPalette";
 import { Grid } from "./components/Grid";
@@ -7,10 +7,11 @@ import { SelectedPanel } from "./components/SelectedPanel";
 import { TechTree } from "./components/TechTree";
 import { QuestLog } from "./components/QuestLog";
 import { Market } from "./components/Market";
+import { EraPanel } from "./components/EraPanel";
 import { Toast } from "./components/Toast";
 import { useToast } from "./hooks/useToast";
-import { MARKET, QUESTS, TICK_MS } from "./game/data";
-import { isQuestComplete, useGame } from "./game/store";
+import { ERAS, MARKET, QUESTS, TICK_MS } from "./game/data";
+import { eraAdvancement, isQuestComplete, useGame } from "./game/store";
 import type { BuildingTypeKey } from "./game/types";
 
 type View = "build" | "research" | "quests" | "market";
@@ -27,10 +28,18 @@ export default function App() {
   const [view, setView] = useState<View>("build");
   const [selectedType, setSelectedType] = useState<BuildingTypeKey>("derrick");
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
+  const [eraOpen, setEraOpen] = useState(false);
 
   const tick = useGame((s) => s.tick);
   const marketTick = useGame((s) => s.marketTick);
   const reset = useGame((s) => s.reset);
+  const era = useGame((s) => s.era);
+
+  // Whether an era advancement is currently available, for the header cue.
+  const canAdvanceEra = useGame((s) =>
+    eraAdvancement({ era: s.era, resources: s.resources, researchedTechs: s.researchedTechs })
+      .canAdvance,
+  );
 
   // Count quests that are complete but not yet claimed, for the tab badge.
   const claimableQuests = useGame((s) =>
@@ -68,7 +77,16 @@ export default function App() {
           Black Gold Empire
         </h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs sm:text-sm text-[#8A8477]">Wildcatter Era</span>
+          <button
+            onClick={() => setEraOpen(true)}
+            className="relative flex items-center gap-1 text-xs sm:text-sm text-[#8A8477] hover:text-paper transition-colors"
+          >
+            {ERAS[era].name}
+            <ChevronDown size={13} />
+            {canAdvanceEra && (
+              <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-amber animate-pulse" />
+            )}
+          </button>
           <button
             onClick={handleReset}
             title="Reset save"
@@ -137,6 +155,8 @@ export default function App() {
           showToast={showToast}
         />
       )}
+
+      {eraOpen && <EraPanel onClose={() => setEraOpen(false)} showToast={showToast} />}
 
       <Toast message={message} />
     </div>

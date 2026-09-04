@@ -5,10 +5,15 @@ import {
   Building2,
   DollarSign,
   Beaker,
+  Cog,
+  Gauge,
+  Ship,
+  Sun,
 } from "lucide-react";
 import type {
   BuildingType,
   BuildingTypeKey,
+  Era,
   MarketPrices,
   Quest,
   ResourceKey,
@@ -81,6 +86,24 @@ export const BUILDING_TYPES: Record<BuildingTypeKey, BuildingType> = {
     color: "#6E8CA0",
     blurb: "Generates research points for the tech tree.",
   },
+  steelRig: {
+    name: "Steel Rig",
+    icon: Cog,
+    cost: 300,
+    baseRate: 4,
+    resource: "crude",
+    color: "#9AA6B2",
+    blurb: "An industrial steel derrick with heavy crude output.",
+  },
+  pipelineHub: {
+    name: "Pipeline Hub",
+    icon: Gauge,
+    cost: 550,
+    baseRate: 6,
+    resource: "gas",
+    color: "#5B7B6E",
+    blurb: "A high-pressure hub pulling natural gas at scale.",
+  },
   offshoreRig: {
     name: "Offshore Platform",
     icon: Droplet,
@@ -89,7 +112,25 @@ export const BUILDING_TYPES: Record<BuildingTypeKey, BuildingType> = {
     resource: "crude",
     color: "#8A5CF6",
     blurb: "A deepwater rig with far higher output than a derrick.",
-    requiresTech: "offshore",
+  },
+  lngTerminal: {
+    name: "LNG Terminal",
+    icon: Ship,
+    cost: 1200,
+    baseRate: 5,
+    resource: "fuel",
+    consumes: { gas: 2 },
+    color: "#E3A857",
+    blurb: "Liquefies natural gas into refined fuel at industrial scale.",
+  },
+  solarPlant: {
+    name: "Solar Array",
+    icon: Sun,
+    cost: 2500,
+    baseRate: 12,
+    resource: "cash",
+    color: "#6FBF9F",
+    blurb: "Clean-energy income — the prestige of a modern empire.",
   },
 };
 
@@ -143,10 +184,60 @@ export const TECHS: Tech[] = [
     cost: 150,
     requires: ["catalytic"],
     effect: {},
-    unlockBuilding: "offshoreRig",
-    desc: "Unlocks the Offshore Platform, a high-output crude rig.",
+    desc: "Enables advancement to the Offshore Age.",
   },
 ];
+
+// ---- Eras ----
+
+/** Ordered technological eras. Advancing unlocks new building tiers. */
+export const ERAS: Era[] = [
+  {
+    id: "wildcatter",
+    name: "Wildcatter Era",
+    tagline: "Strike oil with derricks and gas wells; refine and sell to build capital.",
+    unlocks: ["derrick", "gasWell", "refinery", "office", "lab"],
+    advanceCost: { cash: 1500, research: 50 },
+    requiresTech: "rotary",
+  },
+  {
+    id: "industrial",
+    name: "Industrial Drilling",
+    tagline: "Steel rigs and pipeline hubs pull crude and gas at industrial scale.",
+    unlocks: ["steelRig", "pipelineHub"],
+    advanceCost: { cash: 4000, research: 150 },
+    requiresTech: "offshore",
+  },
+  {
+    id: "offshore",
+    name: "Offshore Age",
+    tagline: "Push into deepwater with high-output offshore platforms.",
+    unlocks: ["offshoreRig"],
+    advanceCost: { cash: 9000, research: 300 },
+  },
+  {
+    id: "modern",
+    name: "Modern Refining",
+    tagline: "Automated LNG terminals scale refined-fuel output to new highs.",
+    unlocks: ["lngTerminal"],
+    advanceCost: { cash: 20000, research: 600 },
+  },
+  {
+    id: "renewable",
+    name: "Renewable Transition",
+    tagline: "Pivot to clean energy — prestige buildings for the endgame.",
+    unlocks: ["solarPlant"],
+  },
+];
+
+/** Minimum era index at which each building becomes available. */
+export const BUILDING_ERA: Record<BuildingTypeKey, number> = (() => {
+  const map = {} as Record<BuildingTypeKey, number>;
+  ERAS.forEach((era, index) => {
+    for (const building of era.unlocks) map[building] = index;
+  });
+  return map;
+})();
 
 /** Three starter contract objectives, per the design spec. */
 export const QUESTS: Quest[] = [

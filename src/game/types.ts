@@ -91,4 +91,22 @@ export type BuildingTypeKey =
   | "refinery"
   | "office"
   | "lab"
-  | "offshoreRig";
+  | "steelRig"
+  | "pipelineHub"
+  | "offshoreRig"
+  | "lngTerminal"
+  | "solarPlant";
+
+/** A technological era. Advancing unlocks a new tier of buildings. */
+export interface Era {
+  id: string;
+  name: string;
+  /** One-line description of the era's theme. */
+  tagline: string;
+  /** Buildings that become available upon reaching this era. */
+  unlocks: BuildingTypeKey[];
+  /** Cost to advance FROM this era to the next. Omitted on the final era. */
+  advanceCost?: Partial<Resources>;
+  /** Tech that must be researched before advancing to the next era. */
+  requiresTech?: string;
+}

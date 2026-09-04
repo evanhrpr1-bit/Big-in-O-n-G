@@ -4,8 +4,9 @@ An oil & gas themed city-building strategy game, styled after *Forge of Empires*
 Build rigs, refineries, and offices on a grid; collect resources on a real-time
 tick; climb a research tree; and complete contract quests to grow your energy empire.
 
-Currently implements the **Wildcatter Era** foundation described in the design
-spec: the core build/collect loop, tech tree, and a starter quest chain.
+Progress through five eras — **Wildcatter → Industrial Drilling → Offshore Age →
+Modern Refining → Renewable Transition** — each unlocking a new tier of buildings.
+Built on the core build/collect loop, tech tree, market, and a starter quest chain.
 
 ## Tech stack
 
@@ -39,6 +40,11 @@ npm run lint     # type-check only
 - **Market** — sell crude, gas, and refined fuel for cash at live prices that
   drift every few seconds. Random **price spikes and crashes** reward timing your
   trades. This closes the economic loop: production → market → cash → expansion.
+- **Eras** — click the era name in the header to open the era timeline. Meeting
+  a resource cost (and sometimes a required tech) advances you to the next era,
+  unlocking a new tier of buildings (steel rigs, pipeline hubs, offshore
+  platforms, LNG terminals, solar arrays). A pulsing dot on the header signals
+  when advancement is available.
 
 Progress is saved automatically. Use the reset button in the header to start over.
 
@@ -58,7 +64,7 @@ src/
 
 ## Roadmap
 
-The design spec calls for more than this foundation — later eras and their
-building tiers, a continent/expansion map, and Cartel (guild) / PvP features. The
-data-driven `game/` layer is structured so new buildings, techs, quests, and
-market tuning are added by editing `data.ts`.
+The design spec calls for more than this foundation — a continent/expansion map,
+random operational events (spills, inspections), and Cartel (guild) / PvP
+features. The data-driven `game/` layer is structured so new buildings, techs,
+quests, eras, and market tuning are added by editing `data.ts`.

@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
+  BUILDING_ERA,
   BUILDING_TYPES,
+  ERAS,
   MARKET,
   QUESTS,
   RESOURCE_META,
@@ -42,6 +44,8 @@ export interface GameState {
   techBonuses: ProductionBonuses;
   prices: MarketPrices;
   marketEvent: MarketEvent | null;
+  /** Index into ERAS of the player's current era. */
+  era: number;
 
   /** Advance production by one tick. */
   tick: () => void;
@@ -49,6 +53,8 @@ export interface GameState {
   marketTick: () => void;
   /** Sell up to `qty` units of a commodity at the live price (Infinity = all). */
   sell: (resource: SellableResource, qty: number) => string;
+  /** Advance to the next era if requirements are met. Returns a status message. */
+  advanceEra: () => string;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
   build: (index: number, type: BuildingTypeKey) => string;
   /** Upgrade the building at `index`. Returns a status message. */
@@ -85,6 +91,7 @@ export const useGame = create<GameState>()(
       techBonuses: { ...NEUTRAL_BONUSES },
       prices: startingPrices(),
       marketEvent: null,
+      era: 0,
 
       tick: () =>
         set((state) => {
@@ -160,10 +167,36 @@ export const useGame = create<GameState>()(
         return `Sold ${amount} ${label} for $${proceeds}`;
       },
 
+      advanceEra: () => {
+        const state = get();
+        const nextIndex = state.era + 1;
+        if (nextIndex >= ERAS.length) return "Already at the final era";
+        const current = ERAS[state.era];
+        if (current.requiresTech && !state.researchedTechs.includes(current.requiresTech)) {
+          const tech = TECHS.find((t) => t.id === current.requiresTech);
+          return `Research ${tech?.name ?? "the required tech"} to advance`;
+        }
+        const cost = current.advanceCost ?? {};
+        for (const [res, amount] of Object.entries(cost)) {
+          if (state.resources[res as keyof Resources] < (amount as number)) {
+            return `Not enough ${RESOURCE_META[res as keyof Resources].label} to advance`;
+          }
+        }
+        const resources = { ...state.resources };
+        for (const [res, amount] of Object.entries(cost)) {
+          resources[res as keyof Resources] -= amount as number;
+        }
+        set({ resources, era: nextIndex });
+        return `Advanced to the ${ERAS[nextIndex].name}`;
+      },
+
       build: (index, type) => {
         const state = get();
         if (state.grid[index]) return "That lot is already occupied";
         const meta = BUILDING_TYPES[type];
+        if (state.era < BUILDING_ERA[type]) {
+          return `Reach the ${ERAS[BUILDING_ERA[type]].name} to build ${meta.name}`;
+        }
         if (meta.requiresTech && !state.researchedTechs.includes(meta.requiresTech)) {
           return `Research required to build ${meta.name}`;
         }
@@ -241,11 +274,12 @@ export const useGame = create<GameState>()(
           techBonuses: { ...NEUTRAL_BONUSES },
           prices: startingPrices(),
           marketEvent: null,
+          era: 0,
         }),
     }),
     {
       name: "black-gold-empire",
-      version: 2,
+      version: 3,
       // Only persist durable game state — not action functions or transient
       // market events (those start fresh each session).
       partialize: (state) => ({
@@ -254,11 +288,13 @@ export const useGame = create<GameState>()(
         researchedTechs: state.researchedTechs,
         claimedQuests: state.claimedQuests,
         prices: state.prices,
+        era: state.era,
       }),
-      // Saves from before market support lack `prices`; backfill them.
+      // Backfill fields added in later versions for older saves.
       migrate: (persisted, _version) => {
         const state = (persisted ?? {}) as Partial<GameState>;
         if (!state.prices) state.prices = startingPrices();
+        if (typeof state.era !== "number") state.era = 0;
         return state as GameState;
       },
       // Rehydrate derived tech bonuses from the saved tech list.
@@ -266,6 +302,7 @@ export const useGame = create<GameState>()(
         if (!state) return;
         state.techBonuses = bonusesFrom(state.researchedTechs);
         if (!state.prices) state.prices = startingPrices();
+        if (typeof state.era !== "number") state.era = 0;
       },
     },
   ),
@@ -281,6 +318,50 @@ export function effectivePrice(
 ): number {
   const mult = event && event.resource === resource ? event.mult : 1;
   return prices[resource] * mult;
+}
+
+// ---- Era selectors (pure) ----
+
+export interface EraAdvancement {
+  /** Whether the player is already at the final era. */
+  isFinal: boolean;
+  /** The era being advanced into, if any. */
+  next: (typeof ERAS)[number] | null;
+  /** Per-resource advancement cost with have/need affordability. */
+  costs: { resource: keyof Resources; need: number; have: number; ok: boolean }[];
+  /** Required tech name, if any, and whether it's been researched. */
+  requiredTech: { name: string; ok: boolean } | null;
+  /** True when every requirement is satisfied. */
+  canAdvance: boolean;
+}
+
+/** Compute what it takes to advance from the current era. */
+export function eraAdvancement(
+  state: Pick<GameState, "era" | "resources" | "researchedTechs">,
+): EraAdvancement {
+  const current = ERAS[state.era];
+  const next = ERAS[state.era + 1] ?? null;
+  if (!next) {
+    return { isFinal: true, next: null, costs: [], requiredTech: null, canAdvance: false };
+  }
+
+  const costs = Object.entries(current.advanceCost ?? {}).map(([res, need]) => {
+    const resource = res as keyof Resources;
+    const have = Math.floor(state.resources[resource]);
+    return { resource, need: need as number, have, ok: have >= (need as number) };
+  });
+
+  let requiredTech: { name: string; ok: boolean } | null = null;
+  if (current.requiresTech) {
+    const tech = TECHS.find((t) => t.id === current.requiresTech);
+    requiredTech = {
+      name: tech?.name ?? current.requiresTech,
+      ok: state.researchedTechs.includes(current.requiresTech),
+    };
+  }
+
+  const canAdvance = costs.every((c) => c.ok) && (requiredTech?.ok ?? true);
+  return { isFinal: false, next, costs, requiredTech, canAdvance };
 }
 
 // ---- Quest progress selectors (pure; kept out of the store) ----
