@@ -7,6 +7,7 @@ import {
   CARTEL_BACKING_PER_LEVEL,
   ERAS,
   FLEET_PURCHASE,
+  GRID_SIZE,
   INCIDENTS,
   INCIDENT_CHANCE,
   MARABOU_TRICKLE_AMOUNT,
@@ -254,6 +255,72 @@ function backfill(state: Partial<GameState>): GameState {
   return state as GameState;
 }
 
+/** Orthogonal neighbours of a grid index. */
+function neighbours(index: number): number[] {
+  const col = index % GRID_SIZE;
+  const row = Math.floor(index / GRID_SIZE);
+  const out: number[] = [];
+  if (col > 0) out.push(index - 1);
+  if (col < GRID_SIZE - 1) out.push(index + 1);
+  if (row > 0) out.push(index - GRID_SIZE);
+  if (row < GRID_SIZE - 1) out.push(index + GRID_SIZE);
+  return out;
+}
+
+/**
+ * Label each occupied tile with the id of the network it belongs to. Tiles are
+ * linked by orthogonal adjacency, so buildings placed side by side are already
+ * connected and roads exist to bridge the gaps between them.
+ */
+export function gridNetworks(grid: (PlacedBuilding | null)[]): number[] {
+  const network = new Array(grid.length).fill(-1);
+  let next = 0;
+  for (let start = 0; start < grid.length; start++) {
+    if (!grid[start] || network[start] !== -1) continue;
+    const queue = [start];
+    network[start] = next;
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      for (const n of neighbours(cur)) {
+        if (grid[n] && network[n] === -1) {
+          network[n] = next;
+          queue.push(n);
+        }
+      }
+    }
+    next++;
+  }
+  return network;
+}
+
+/**
+ * Indices of buildings that consume an input and can actually reach a producer
+ * of it. A refinery with no crude well on its network refines nothing.
+ */
+export function suppliedIndices(grid: (PlacedBuilding | null)[]): Set<number> {
+  const network = gridNetworks(grid);
+  const producedBy = new Map<number, Set<ResourceKey>>();
+
+  grid.forEach((cell, i) => {
+    if (!cell) return;
+    const type = BUILDING_TYPES[cell.type];
+    if (type.baseRate <= 0) return;
+    let set = producedBy.get(network[i]);
+    if (!set) producedBy.set(network[i], (set = new Set()));
+    set.add(type.resource);
+  });
+
+  const supplied = new Set<number>();
+  grid.forEach((cell, i) => {
+    if (!cell) return;
+    const type = BUILDING_TYPES[cell.type];
+    if (!type.consumes) return;
+    const input = Object.keys(type.consumes)[0] as ResourceKey;
+    if (producedBy.get(network[i])?.has(input)) supplied.add(i);
+  });
+  return supplied;
+}
+
 /** State a production run reads from. */
 type ProductionInputs = Pick<
   GameState,
@@ -272,11 +339,16 @@ function runProduction(
 ): { resources: Resources; effects: ActiveEffect[] } {
   const resources: Resources = { ...state.resources };
   let effects = state.effects.map((e) => ({ ...e }));
+  // The grid can't change mid-run, so supply is resolved once up front.
+  const supplied = suppliedIndices(state.grid);
 
   for (let i = 0; i < ticks; i++) {
-    for (const cell of state.grid) {
+    for (let cellIndex = 0; cellIndex < state.grid.length; cellIndex++) {
+      const cell = state.grid[cellIndex];
       if (!cell) continue;
       const type = BUILDING_TYPES[cell.type];
+      // A plant cut off from its input runs dry, however much is in the bank.
+      if (type.consumes && !supplied.has(cellIndex)) continue;
       const mult =
         (state.techBonuses[type.resource] ?? 1) *
         (state.regionBonuses[type.resource] ?? 1) *
@@ -1015,6 +1087,7 @@ export const useGame = create<GameState>()(
         const cell = state.grid[index];
         if (!cell) return "Nothing to upgrade";
         const meta = BUILDING_TYPES[cell.type];
+        if (meta.isRoad) return "Roads can't be upgraded";
         const cost = upgradeCostFor(meta, cell.level);
         if (state.resources.cash < cost) return "Not enough cash to upgrade";
         const grid = [...state.grid];

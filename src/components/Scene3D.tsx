@@ -3,7 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { BUILDING_TYPES, GRID_SIZE } from "../game/data";
-import { useGame } from "../game/store";
+import { suppliedIndices, useGame } from "../game/store";
 import { Building3D } from "./Building3D";
 import type { BuildingTypeKey, PlacedBuilding } from "../game/types";
 
@@ -31,6 +31,7 @@ function tilePosition(index: number): [number, number, number] {
 export function Scene3D({ selectedType, selectedCell, onInspect, showToast }: Props) {
   const grid = useGame((s) => s.grid);
   const build = useGame((s) => s.build);
+  const supplied = suppliedIndices(grid);
   const [hovered, setHovered] = useState<number | null>(null);
   const controls = useRef<OrbitControlsImpl>(null);
 
@@ -116,6 +117,9 @@ export function Scene3D({ selectedType, selectedCell, onInspect, showToast }: Pr
               key={index}
               index={index}
               cell={cell}
+              starved={
+                !!cell && !!BUILDING_TYPES[cell.type].consumes && !supplied.has(index)
+              }
               isSelected={selectedCell === index}
               isHovered={hovered === index}
               onHover={setHovered}
@@ -155,15 +159,18 @@ export function Scene3D({ selectedType, selectedCell, onInspect, showToast }: Pr
 interface TileProps {
   index: number;
   cell: PlacedBuilding | null;
+  /** True when this building consumes an input it can't currently reach. */
+  starved: boolean;
   isSelected: boolean;
   isHovered: boolean;
   onHover: (index: number | null) => void;
   onClick: (index: number) => void;
 }
 
-function Tile({ index, cell, isSelected, isHovered, onHover, onClick }: TileProps) {
+function Tile({ index, cell, starved, isSelected, isHovered, onHover, onClick }: TileProps) {
   const [x, , z] = tilePosition(index);
-  const accent = cell ? BUILDING_TYPES[cell.type].color : null;
+  // A starved plant rings red instead of its own colour.
+  const accent = cell ? (starved ? "#C1440E" : BUILDING_TYPES[cell.type].color) : null;
   const lotColor = isSelected
     ? "#EDE6D6"
     : isHovered

@@ -47,6 +47,8 @@ export interface BuildingType {
   blurb: string;
   /** Tech id that must be researched before this can be built. */
   requiresTech?: string;
+  /** Roads carry no production; they exist to link buildings together. */
+  isRoad?: boolean;
 }
 
 /** A placed building occupying a grid cell. */
@@ -97,7 +99,8 @@ export type BuildingTypeKey =
   | "pipelineHub"
   | "offshoreRig"
   | "lngTerminal"
-  | "solarPlant";
+  | "solarPlant"
+  | "road";
 
 /** Summary of what accrued while the app was closed. */
 export interface OfflineReport {

@@ -29,13 +29,19 @@ npm run lint     # type-check only
 
 ## Gameplay
 
-- **Build** — a 3D board rendered with React Three Fiber. Drag to orbit, pinch or
-  scroll to zoom. Tap an empty lot to place the selected structure; tap a built
+- **Build** — a 3D board rendered with React Three Fiber. Drag to orbit, two
+  fingers or right-drag to pan, pinch or scroll to zoom, and Recentre to return
+  to the opening view. Pick a structure from the dropdown build menu, grouped by
+  era. Tap an empty lot to place the selected structure; tap a built
   one to inspect and upgrade it (levels raise output at an escalating cash cost,
   and buildings grow taller as they level). Every structure is modelled from
   primitive geometry, so the catalogue ships with no external 3D assets.
 - **Resources** — Cash, Crude, Gas, Refined Fuel, and Research Points accumulate
-  every couple of seconds. Refineries consume crude to produce fuel.
+  every couple of seconds.
+- **Supply lines** — plants that consume an input only run when they can reach a
+  producer of it. Buildings placed side by side are already connected; **access
+  roads** bridge the gaps between them. A refinery with no crude well on its
+  network refines nothing, and rings red on the board until it's linked up.
 - **Research** — spend Research Points in the tech tree for production bonuses and
   to unlock the Offshore Platform.
 - **Quests** — complete contract objectives (build a derrick, stockpile fuel,

@@ -162,6 +162,21 @@ function renderBuilding(type: BuildingTypeKey, color: string) {
         </>
       );
 
+    case "road":
+      return (
+        <>
+          <mesh position={[0, 0.022, 0]} receiveShadow>
+            <boxGeometry args={[0.94, 0.03, 0.94]} />
+            <meshStandardMaterial color={color} roughness={1} />
+          </mesh>
+          {/* Wheel-worn centre, so a run of road reads as a track */}
+          <mesh position={[0, 0.04, 0]} receiveShadow>
+            <boxGeometry args={[0.96, 0.004, 0.34]} />
+            <meshStandardMaterial color="#877E70" roughness={1} />
+          </mesh>
+        </>
+      );
+
     case "solarPlant":
       return (
         <>

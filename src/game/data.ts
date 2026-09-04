@@ -8,6 +8,7 @@ import {
   Cog,
   Gauge,
   Gem,
+  Route,
   Ship,
   Sun,
 } from "lucide-react";
@@ -136,6 +137,16 @@ export const BUILDING_TYPES: Record<BuildingTypeKey, BuildingType> = {
     color: "#E3A857",
     blurb: "Liquefies natural gas into refined fuel at industrial scale.",
   },
+  road: {
+    name: "Access Road",
+    icon: Route,
+    cost: 40,
+    baseRate: 0,
+    resource: "cash",
+    isRoad: true,
+    color: "#6B6459",
+    blurb: "Carries nothing on its own — it links producers to the plants that refine them.",
+  },
   solarPlant: {
     name: "Solar Array",
     icon: Sun,
@@ -210,7 +221,7 @@ export const ERAS: Era[] = [
     id: "wildcatter",
     name: "Wildcatter Era",
     tagline: "Strike oil with derricks and gas wells; refine and sell to build capital.",
-    unlocks: ["derrick", "gasWell", "refinery", "office", "lab"],
+    unlocks: ["road", "derrick", "gasWell", "refinery", "office", "lab"],
     advanceCost: { cash: 1500, research: 50 },
     requiresTech: "rotary",
   },

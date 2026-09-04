@@ -1,6 +1,6 @@
 import { ArrowUp, X } from "lucide-react";
 import { BUILDING_TYPES, upgradeCostFor } from "../game/data";
-import { useGame } from "../game/store";
+import { suppliedIndices, useGame } from "../game/store";
 import { BuildingSprite } from "./BuildingSprite";
 
 interface Props {
@@ -11,8 +11,11 @@ interface Props {
 
 export function SelectedPanel({ index, onClose, showToast }: Props) {
   const cell = useGame((s) => s.grid[index]);
+  const grid = useGame((s) => s.grid);
   const upgrade = useGame((s) => s.upgrade);
   if (!cell) return null;
+  const starved =
+    !!BUILDING_TYPES[cell.type].consumes && !suppliedIndices(grid).has(index);
 
   const meta = BUILDING_TYPES[cell.type];
   const cost = upgradeCostFor(meta, cell.level);
@@ -26,6 +29,11 @@ export function SelectedPanel({ index, onClose, showToast }: Props) {
             {meta.name} · Level {cell.level}
           </div>
           <div className="text-xs text-[#8A8477]">{meta.blurb}</div>
+          {starved && (
+            <div className="text-[11px] text-[#C1440E] mt-0.5">
+              No supply — link it to a producer with roads
+            </div>
+          )}
         </div>
       </div>
       <div className="flex gap-2 shrink-0">
