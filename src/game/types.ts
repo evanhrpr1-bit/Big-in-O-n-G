@@ -9,6 +9,24 @@ export type Resources = Record<ResourceKey, number>;
 /** Multiplicative production bonuses granted by researched tech. */
 export type ProductionBonuses = Record<ResourceKey, number>;
 
+/** Commodities that can be sold on the market for cash. */
+export type SellableResource = "crude" | "gas" | "fuel";
+
+/** Live unit price per sellable commodity. */
+export type MarketPrices = Record<SellableResource, number>;
+
+/** A transient market swing affecting one commodity's price. */
+export interface MarketEvent {
+  resource: SellableResource;
+  kind: "spike" | "crash";
+  /** Multiplier applied to the commodity's price while active. */
+  mult: number;
+  /** Human-readable headline shown in the market banner. */
+  label: string;
+  /** Market ticks remaining before the event clears. */
+  ticksLeft: number;
+}
+
 /** A building blueprint from the catalogue. `id` is the key in BUILDING_TYPES. */
 export interface BuildingType {
   name: string;

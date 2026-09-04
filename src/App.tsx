@@ -1,23 +1,25 @@
 import { useEffect, useState } from "react";
-import { Beaker, Hammer, ScrollText, RotateCcw } from "lucide-react";
+import { Beaker, Hammer, ScrollText, Store, RotateCcw } from "lucide-react";
 import { ResourceBar } from "./components/ResourceBar";
 import { BuildPalette } from "./components/BuildPalette";
 import { Grid } from "./components/Grid";
 import { SelectedPanel } from "./components/SelectedPanel";
 import { TechTree } from "./components/TechTree";
 import { QuestLog } from "./components/QuestLog";
+import { Market } from "./components/Market";
 import { Toast } from "./components/Toast";
 import { useToast } from "./hooks/useToast";
-import { QUESTS, TICK_MS } from "./game/data";
+import { MARKET, QUESTS, TICK_MS } from "./game/data";
 import { isQuestComplete, useGame } from "./game/store";
 import type { BuildingTypeKey } from "./game/types";
 
-type View = "build" | "research" | "quests";
+type View = "build" | "research" | "quests" | "market";
 
 const TABS: { id: View; label: string; icon: typeof Hammer; active: string }[] = [
   { id: "build", label: "Build", icon: Hammer, active: "#C1440E" },
   { id: "research", label: "Research", icon: Beaker, active: "#6E8CA0" },
   { id: "quests", label: "Quests", icon: ScrollText, active: "#E3A857" },
+  { id: "market", label: "Market", icon: Store, active: "#5B7B6E" },
 ];
 
 export default function App() {
@@ -27,6 +29,7 @@ export default function App() {
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
 
   const tick = useGame((s) => s.tick);
+  const marketTick = useGame((s) => s.marketTick);
   const reset = useGame((s) => s.reset);
 
   // Count quests that are complete but not yet claimed, for the tab badge.
@@ -41,6 +44,12 @@ export default function App() {
     const id = setInterval(tick, TICK_MS);
     return () => clearInterval(id);
   }, [tick]);
+
+  // Market loop (slower cadence than production).
+  useEffect(() => {
+    const id = setInterval(marketTick, MARKET.tickMs);
+    return () => clearInterval(id);
+  }, [marketTick]);
 
   function handleReset() {
     if (window.confirm("Wipe your save and start a new empire?")) {
@@ -118,6 +127,8 @@ export default function App() {
       {view === "research" && <TechTree showToast={showToast} />}
 
       {view === "quests" && <QuestLog showToast={showToast} />}
+
+      {view === "market" && <Market showToast={showToast} />}
 
       {selectedCell !== null && view === "build" && (
         <SelectedPanel

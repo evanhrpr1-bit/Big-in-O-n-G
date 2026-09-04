@@ -2,18 +2,25 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   BUILDING_TYPES,
+  MARKET,
   QUESTS,
+  RESOURCE_META,
+  SELLABLE,
   STARTING_RESOURCES,
   TECHS,
   makeEmptyGrid,
+  startingPrices,
   upgradeCostFor,
 } from "./data";
 import type {
   BuildingTypeKey,
+  MarketEvent,
+  MarketPrices,
   PlacedBuilding,
   ProductionBonuses,
   Quest,
   Resources,
+  SellableResource,
   Tech,
 } from "./types";
 
@@ -33,9 +40,15 @@ export interface GameState {
   researchedTechs: string[];
   claimedQuests: string[];
   techBonuses: ProductionBonuses;
+  prices: MarketPrices;
+  marketEvent: MarketEvent | null;
 
   /** Advance production by one tick. */
   tick: () => void;
+  /** Re-roll market prices and advance any active market event. */
+  marketTick: () => void;
+  /** Sell up to `qty` units of a commodity at the live price (Infinity = all). */
+  sell: (resource: SellableResource, qty: number) => string;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
   build: (index: number, type: BuildingTypeKey) => string;
   /** Upgrade the building at `index`. Returns a status message. */
@@ -70,6 +83,8 @@ export const useGame = create<GameState>()(
       researchedTechs: [],
       claimedQuests: [],
       techBonuses: { ...NEUTRAL_BONUSES },
+      prices: startingPrices(),
+      marketEvent: null,
 
       tick: () =>
         set((state) => {
@@ -93,6 +108,57 @@ export const useGame = create<GameState>()(
           }
           return { resources: next };
         }),
+
+      marketTick: () =>
+        set((state) => {
+          // Mean-reverting random walk within [min, max] per commodity.
+          const prices: MarketPrices = { ...state.prices };
+          for (const r of SELLABLE) {
+            const base = MARKET.base[r];
+            const revert = (base - prices[r]) * MARKET.reversion;
+            const noise = base * MARKET.drift * (Math.random() * 2 - 1);
+            const p = prices[r] + revert + noise;
+            prices[r] = Math.max(MARKET.min[r], Math.min(MARKET.max[r], p));
+          }
+
+          // Advance or possibly spawn a market event.
+          let marketEvent = state.marketEvent;
+          if (marketEvent) {
+            const ticksLeft = marketEvent.ticksLeft - 1;
+            marketEvent = ticksLeft <= 0 ? null : { ...marketEvent, ticksLeft };
+          } else if (Math.random() < MARKET.eventChance) {
+            const resource = SELLABLE[Math.floor(Math.random() * SELLABLE.length)];
+            const spike = Math.random() < 0.5;
+            const label = RESOURCE_META[resource].label;
+            marketEvent = {
+              resource,
+              kind: spike ? "spike" : "crash",
+              mult: spike ? MARKET.spikeMult : MARKET.crashMult,
+              label: `${label} ${spike ? "price spike" : "price crash"}`,
+              ticksLeft: MARKET.eventDurationTicks,
+            };
+          }
+
+          return { prices, marketEvent };
+        }),
+
+      sell: (resource, qty) => {
+        const state = get();
+        const label = RESOURCE_META[resource].label;
+        const have = Math.floor(state.resources[resource]);
+        const amount = Math.min(qty, have);
+        if (amount <= 0) return `No ${label.toLowerCase()} to sell`;
+        const price = effectivePrice(resource, state.prices, state.marketEvent);
+        const proceeds = Math.floor(price * amount);
+        set({
+          resources: {
+            ...state.resources,
+            [resource]: state.resources[resource] - amount,
+            cash: state.resources.cash + proceeds,
+          },
+        });
+        return `Sold ${amount} ${label} for $${proceeds}`;
+      },
 
       build: (index, type) => {
         const state = get();
@@ -173,25 +239,49 @@ export const useGame = create<GameState>()(
           researchedTechs: [],
           claimedQuests: [],
           techBonuses: { ...NEUTRAL_BONUSES },
+          prices: startingPrices(),
+          marketEvent: null,
         }),
     }),
     {
       name: "black-gold-empire",
-      version: 1,
-      // Only persist the durable game state, not the action functions.
+      version: 2,
+      // Only persist durable game state — not action functions or transient
+      // market events (those start fresh each session).
       partialize: (state) => ({
         resources: state.resources,
         grid: state.grid,
         researchedTechs: state.researchedTechs,
         claimedQuests: state.claimedQuests,
+        prices: state.prices,
       }),
+      // Saves from before market support lack `prices`; backfill them.
+      migrate: (persisted, _version) => {
+        const state = (persisted ?? {}) as Partial<GameState>;
+        if (!state.prices) state.prices = startingPrices();
+        return state as GameState;
+      },
       // Rehydrate derived tech bonuses from the saved tech list.
       onRehydrateStorage: () => (state) => {
-        if (state) state.techBonuses = bonusesFrom(state.researchedTechs);
+        if (!state) return;
+        state.techBonuses = bonusesFrom(state.researchedTechs);
+        if (!state.prices) state.prices = startingPrices();
       },
     },
   ),
 );
+
+// ---- Market selectors (pure) ----
+
+/** The live sale price for a commodity, including any active market event. */
+export function effectivePrice(
+  resource: SellableResource,
+  prices: MarketPrices,
+  event: MarketEvent | null,
+): number {
+  const mult = event && event.resource === resource ? event.mult : 1;
+  return prices[resource] * mult;
+}
 
 // ---- Quest progress selectors (pure; kept out of the store) ----
 

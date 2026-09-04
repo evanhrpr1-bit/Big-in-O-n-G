@@ -9,8 +9,10 @@ import {
 import type {
   BuildingType,
   BuildingTypeKey,
+  MarketPrices,
   Quest,
   ResourceKey,
+  SellableResource,
   Tech,
 } from "./types";
 import type { LucideIcon } from "lucide-react";
@@ -173,6 +175,37 @@ export const QUESTS: Quest[] = [
     reward: { cash: 200 },
   },
 ];
+
+// ---- Market ----
+
+export const SELLABLE: SellableResource[] = ["crude", "gas", "fuel"];
+
+/** Market tuning: base prices, bounds, and volatility. */
+export const MARKET = {
+  /** Fair-value price each commodity drifts toward. */
+  base: { crude: 3, gas: 2.5, fuel: 8 } as MarketPrices,
+  /** Hard price floor per commodity. */
+  min: { crude: 1, gas: 1, fuel: 3 } as MarketPrices,
+  /** Hard price ceiling per commodity. */
+  max: { crude: 8, gas: 7, fuel: 20 } as MarketPrices,
+  /** How often prices are re-rolled, in milliseconds. */
+  tickMs: 5000,
+  /** Max random step per tick, as a fraction of base price. */
+  drift: 0.12,
+  /** Pull back toward base each tick (0–1). */
+  reversion: 0.08,
+  /** Chance per tick to start an event when none is active. */
+  eventChance: 0.12,
+  /** How many market ticks an event lasts. */
+  eventDurationTicks: 6,
+  /** Price multiplier for a spike / crash. */
+  spikeMult: 1.7,
+  crashMult: 0.55,
+};
+
+export function startingPrices(): MarketPrices {
+  return { ...MARKET.base };
+}
 
 export function makeEmptyGrid(): (null)[] {
   return Array.from({ length: GRID_SIZE * GRID_SIZE }, () => null);

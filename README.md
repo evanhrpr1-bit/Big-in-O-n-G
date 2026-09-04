@@ -36,6 +36,9 @@ npm run lint     # type-check only
   to unlock the Offshore Platform.
 - **Quests** — complete contract objectives (build a derrick, stockpile fuel,
   research a tech) and claim resource rewards.
+- **Market** — sell crude, gas, and refined fuel for cash at live prices that
+  drift every few seconds. Random **price spikes and crashes** reward timing your
+  trades. This closes the economic loop: production → market → cash → expansion.
 
 Progress is saved automatically. Use the reset button in the header to start over.
 
@@ -47,7 +50,7 @@ src/
     types.ts     # shared TypeScript types
     data.ts      # buildings, resources, techs, quests, tuning constants
     store.ts     # Zustand store (state + actions) with persistence + selectors
-  components/     # ResourceBar, BuildPalette, Grid, TechTree, QuestLog, ...
+  components/     # ResourceBar, BuildPalette, Grid, TechTree, QuestLog, Market, ...
   hooks/
     useToast.ts  # transient status-message hook
   App.tsx        # screen composition + production tick
@@ -56,6 +59,6 @@ src/
 ## Roadmap
 
 The design spec calls for more than this foundation — later eras and their
-building tiers, a continent/expansion map, a market/trading screen, random
-events, and Cartel (guild) / PvP features. The data-driven `game/` layer is
-structured so new buildings, techs, and quests are added by editing `data.ts`.
+building tiers, a continent/expansion map, and Cartel (guild) / PvP features. The
+data-driven `game/` layer is structured so new buildings, techs, quests, and
+market tuning are added by editing `data.ts`.
