@@ -102,7 +102,14 @@ export type BuildingTypeKey =
 // ---- Fleet ----
 
 /** Kinds of mobile unit the player can own. */
-export type FleetKind = "sonar" | "divers";
+export type FleetKind = "sonar" | "divers" | "rovs";
+
+/**
+ * Pipeline condition per leased region, 0–100. Condition degrades over real
+ * time and scales that region's lease bonus proportionally, so a neglected
+ * field stops earning its keep.
+ */
+export type Pipelines = Record<string, number>;
 
 /** A mission a fleet unit is currently running. */
 export interface FleetMission {

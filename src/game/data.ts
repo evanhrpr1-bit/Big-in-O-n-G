@@ -313,6 +313,15 @@ export const SALVAGE_OPTIONS: SalvageOption[] = [
   },
 ];
 
+// ---- Pipelines & ROVs ----
+
+/** How often pipeline condition is stepped down. */
+export const PIPELINE_DEGRADE_MS = 10000;
+/** Condition points lost per degrade step. */
+export const PIPELINE_DEGRADE_PER_STEP = 2;
+/** How long an ROV takes to restore a pipeline to full condition. */
+export const PIPELINE_REPAIR_MS = 30000;
+
 /** Marabou trickles in slowly — the spec's "every few hours", compressed. */
 export const MARABOU_TRICKLE_MS = 120000;
 export const MARABOU_TRICKLE_AMOUNT = 1;
@@ -327,6 +336,7 @@ export const FLEET_PURCHASE: Record<
 > = {
   sonar: { label: "Sonar Boat", cash: 2500, marabou: 5, growth: 1.6 },
   divers: { label: "Deep Sea Diver", cash: 1200, marabou: 3, growth: 1.5 },
+  rovs: { label: "ROV", cash: 1800, marabou: 4, growth: 1.55 },
 };
 
 /** Cash cost of the next unit of a kind, given how many are already owned. */

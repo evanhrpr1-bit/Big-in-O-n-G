@@ -12,6 +12,8 @@ import {
   MARABOU_TRICKLE_AMOUNT,
   MARABOU_TRICKLE_MS,
   MARKET,
+  PIPELINE_DEGRADE_PER_STEP,
+  PIPELINE_REPAIR_MS,
   RUSH_MS_PER_MARABOU,
   SALVAGE_OPTIONS,
   SURVEY_OPTIONS,
@@ -40,6 +42,7 @@ import type {
   Incident,
   MarketEvent,
   MarketPrices,
+  Pipelines,
   PlacedBuilding,
   ProductionBonuses,
   Quest,
@@ -60,11 +63,12 @@ const NEUTRAL_BONUSES: ProductionBonuses = {
   marabou: 1,
 };
 
-/** A fresh starting fleet: one sonar boat and one diver. */
+/** A fresh starting fleet: one of each unit type. */
 function startingFleet(): Fleet {
   return {
     sonar: [{ id: "sonar-1", mission: null }],
     divers: [{ id: "diver-1", mission: null }],
+    rovs: [{ id: "rov-1", mission: null }],
   };
 }
 
@@ -101,10 +105,12 @@ export interface GameState {
   cartelBonuses: ProductionBonuses;
   /** Timestamp before which no further rival operation may be run. */
   raidCooldownUntil: number;
-  /** Mobile units: sonar boats and divers. */
+  /** Mobile units: sonar boats, divers, and ROVs. */
   fleet: Fleet;
   /** Timestamp of the next passive Marabou trickle. */
   nextMarabouAt: number;
+  /** Pipeline condition (0–100) per leased region. */
+  pipelines: Pipelines;
 
   /** Advance production by one tick. */
   tick: () => void;
@@ -142,6 +148,10 @@ export interface GameState {
   rushMission: (kind: FleetKind, unitId: string) => string;
   /** Buy another fleet unit with cash or Marabou. */
   buyFleetUnit: (kind: FleetKind, payWith: "cash" | "marabou") => string;
+  /** Step pipeline condition down and refresh region bonuses. */
+  pipelineTick: () => void;
+  /** Send an idle ROV to repair a region's pipeline. */
+  dispatchRov: (regionId: string) => string;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
   build: (index: number, type: BuildingTypeKey) => string;
   /** Upgrade the building at `index`. Returns a status message. */
@@ -192,6 +202,40 @@ export function raidSuccessChance(
   return Math.max(0.05, Math.min(0.95, approach.baseSuccess - rival.difficulty + backing));
 }
 
+/**
+ * Fill in any state a save predates, so older saves load with progress intact.
+ * Shared by `migrate` and `onRehydrateStorage`, which see the same gaps.
+ */
+function backfill(state: Partial<GameState>): GameState {
+  if (!state.prices) state.prices = startingPrices();
+  if (typeof state.era !== "number") state.era = 0;
+  if (!state.scoutedRegions) state.scoutedRegions = [];
+  if (!state.leasedRegions) state.leasedRegions = [];
+  if (!state.effects) state.effects = [];
+  if (state.activeIncident === undefined) state.activeIncident = null;
+  if (state.cartelId === undefined) state.cartelId = null;
+  if (typeof state.cartelContribution !== "number") state.cartelContribution = 0;
+  if (typeof state.raidCooldownUntil !== "number") state.raidCooldownUntil = 0;
+
+  // Deepwater Expansion: marabou balance, fleet, trickle clock, pipelines.
+  if (state.resources && typeof state.resources.marabou !== "number") {
+    state.resources.marabou = STARTING_RESOURCES.marabou;
+  }
+  if (!state.fleet) state.fleet = startingFleet();
+  // ROVs arrived after sonar boats and divers.
+  if (!state.fleet.rovs) state.fleet.rovs = [{ id: "rov-1", mission: null }];
+  if (typeof state.nextMarabouAt !== "number") {
+    state.nextMarabouAt = Date.now() + MARABOU_TRICKLE_MS;
+  }
+  if (!state.pipelines) state.pipelines = {};
+  // Leases held before pipelines existed start at full condition.
+  for (const id of state.leasedRegions) {
+    if (typeof state.pipelines[id] !== "number") state.pipelines[id] = 100;
+  }
+
+  return state as GameState;
+}
+
 /** Incidents whose era and building prerequisites are currently satisfied. */
 function eligibleIncidents(
   state: Pick<GameState, "era" | "grid">,
@@ -211,13 +255,22 @@ export function effectMultiplier(effects: ActiveEffect[], resource: ResourceKey)
   return effects.reduce((mult, e) => (e.resource === resource ? mult * e.mult : mult), 1);
 }
 
-/** Recompute the production bonus map from the set of held region leases. */
-function regionBonusesFrom(leasedRegions: string[]): ProductionBonuses {
+/**
+ * Recompute production bonuses from held leases, scaled by pipeline condition.
+ * A region at 100% condition grants its full bonus; at 0% it grants none, with
+ * the uplift fading proportionally in between.
+ */
+function regionBonusesFrom(
+  leasedRegions: string[],
+  pipelines: Pipelines = {},
+): ProductionBonuses {
   const bonuses: ProductionBonuses = { ...NEUTRAL_BONUSES };
   for (const id of leasedRegions) {
     const region = REGIONS.find((r) => r.id === id);
     if (!region) continue;
-    bonuses[region.bonus.resource] *= region.bonus.mult;
+    const condition = pipelines[id] ?? 100;
+    const scaled = 1 + (region.bonus.mult - 1) * (condition / 100);
+    bonuses[region.bonus.resource] *= scaled;
   }
   return bonuses;
 }
@@ -258,6 +311,7 @@ export const useGame = create<GameState>()(
       raidCooldownUntil: 0,
       fleet: startingFleet(),
       nextMarabouAt: Date.now() + MARABOU_TRICKLE_MS,
+      pipelines: {},
 
       tick: () =>
         set((state) => {
@@ -410,7 +464,14 @@ export const useGame = create<GameState>()(
           resources[res as keyof Resources] -= amount as number;
         }
         const leasedRegions = [...state.leasedRegions, id];
-        set({ resources, leasedRegions, regionBonuses: regionBonusesFrom(leasedRegions) });
+        // A newly leased field comes with a fresh pipeline.
+        const pipelines = { ...state.pipelines, [id]: 100 };
+        set({
+          resources,
+          leasedRegions,
+          pipelines,
+          regionBonuses: regionBonusesFrom(leasedRegions, pipelines),
+        });
         return region.rival
           ? `Outbid ${region.rival} for ${region.name}`
           : `Lease acquired: ${region.name}`;
@@ -655,6 +716,24 @@ export const useGame = create<GameState>()(
         let scoutedRegions = state.scoutedRegions;
         let message: string;
 
+        if (kind === "rovs") {
+          // An ROV repair restores the target pipeline to full condition.
+          const regionId = unit.mission.regionId!;
+          const region = REGIONS.find((r) => r.id === regionId);
+          const pipelines: Pipelines = { ...state.pipelines, [regionId]: 100 };
+          set({
+            pipelines,
+            regionBonuses: regionBonusesFrom(state.leasedRegions, pipelines),
+            fleet: {
+              ...state.fleet,
+              rovs: state.fleet.rovs.map((u) =>
+                u.id === unitId ? { ...u, mission: null } : u,
+              ),
+            },
+          });
+          return `${region?.name ?? "Pipeline"} restored to full condition`;
+        }
+
         if (kind === "sonar") {
           const option =
             SURVEY_OPTIONS.find((o) => o.key === unit.mission!.durationKey) ?? SURVEY_OPTIONS[0];
@@ -749,6 +828,55 @@ export const useGame = create<GameState>()(
           },
         });
         return `${base.label} added to your fleet`;
+      },
+
+      pipelineTick: () =>
+        set((state) => {
+          if (state.leasedRegions.length === 0) return {};
+          const pipelines: Pipelines = { ...state.pipelines };
+          let changed = false;
+          for (const id of state.leasedRegions) {
+            const current = pipelines[id] ?? 100;
+            const next = Math.max(0, current - PIPELINE_DEGRADE_PER_STEP);
+            if (next !== current) {
+              pipelines[id] = next;
+              changed = true;
+            }
+          }
+          if (!changed) return {};
+          return {
+            pipelines,
+            regionBonuses: regionBonusesFrom(state.leasedRegions, pipelines),
+          };
+        }),
+
+      dispatchRov: (regionId) => {
+        const state = get();
+        if (!state.leasedRegions.includes(regionId)) return "You don't hold that lease";
+        const region = REGIONS.find((r) => r.id === regionId);
+        if (state.fleet.rovs.some((u) => u.mission?.regionId === regionId)) {
+          return `An ROV is already working ${region?.name ?? "that field"}`;
+        }
+        const idle = state.fleet.rovs.find((u) => !u.mission);
+        if (!idle) return "No idle ROV available";
+        set({
+          fleet: {
+            ...state.fleet,
+            rovs: state.fleet.rovs.map((u) =>
+              u.id === idle.id
+                ? {
+                    ...u,
+                    mission: {
+                      durationKey: "repair",
+                      returnAt: Date.now() + PIPELINE_REPAIR_MS,
+                      regionId,
+                    },
+                  }
+                : u,
+            ),
+          },
+        });
+        return `ROV en route to ${region?.name ?? "the field"}`;
       },
 
       build: (index, type) => {
@@ -847,11 +975,12 @@ export const useGame = create<GameState>()(
           raidCooldownUntil: 0,
           fleet: startingFleet(),
           nextMarabouAt: Date.now() + MARABOU_TRICKLE_MS,
+          pipelines: {},
         }),
     }),
     {
       name: "black-gold-empire",
-      version: 7,
+      version: 8,
       // Only persist durable game state — not action functions or transient
       // market events (those start fresh each session).
       partialize: (state) => ({
@@ -871,50 +1000,16 @@ export const useGame = create<GameState>()(
         raidCooldownUntil: state.raidCooldownUntil,
         fleet: state.fleet,
         nextMarabouAt: state.nextMarabouAt,
+        pipelines: state.pipelines,
       }),
       // Backfill fields added in later versions for older saves.
-      migrate: (persisted, _version) => {
-        const state = (persisted ?? {}) as Partial<GameState>;
-        if (!state.prices) state.prices = startingPrices();
-        if (typeof state.era !== "number") state.era = 0;
-        if (!state.scoutedRegions) state.scoutedRegions = [];
-        if (!state.leasedRegions) state.leasedRegions = [];
-        if (!state.effects) state.effects = [];
-        if (state.activeIncident === undefined) state.activeIncident = null;
-        if (state.cartelId === undefined) state.cartelId = null;
-        if (typeof state.cartelContribution !== "number") state.cartelContribution = 0;
-        if (typeof state.raidCooldownUntil !== "number") state.raidCooldownUntil = 0;
-        // Pre-expansion saves have no marabou balance, fleet, or trickle clock.
-        if (state.resources && typeof state.resources.marabou !== "number") {
-          state.resources.marabou = STARTING_RESOURCES.marabou;
-        }
-        if (!state.fleet) state.fleet = startingFleet();
-        if (typeof state.nextMarabouAt !== "number") {
-          state.nextMarabouAt = Date.now() + MARABOU_TRICKLE_MS;
-        }
-        return state as GameState;
-      },
-      // Rehydrate derived bonuses from the saved tech and lease lists.
+      migrate: (persisted, _version) => backfill((persisted ?? {}) as Partial<GameState>),
+      // Backfill, then rebuild every derived bonus map from the saved lists.
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+        backfill(state);
         state.techBonuses = bonusesFrom(state.researchedTechs);
-        if (!state.prices) state.prices = startingPrices();
-        if (typeof state.era !== "number") state.era = 0;
-        if (!state.scoutedRegions) state.scoutedRegions = [];
-        if (!state.leasedRegions) state.leasedRegions = [];
-        if (!state.effects) state.effects = [];
-        if (state.activeIncident === undefined) state.activeIncident = null;
-        if (state.cartelId === undefined) state.cartelId = null;
-        if (typeof state.cartelContribution !== "number") state.cartelContribution = 0;
-        if (typeof state.raidCooldownUntil !== "number") state.raidCooldownUntil = 0;
-        if (state.resources && typeof state.resources.marabou !== "number") {
-          state.resources.marabou = STARTING_RESOURCES.marabou;
-        }
-        if (!state.fleet) state.fleet = startingFleet();
-        if (typeof state.nextMarabouAt !== "number") {
-          state.nextMarabouAt = Date.now() + MARABOU_TRICKLE_MS;
-        }
-        state.regionBonuses = regionBonusesFrom(state.leasedRegions);
+        state.regionBonuses = regionBonusesFrom(state.leasedRegions, state.pipelines);
         state.cartelBonuses = cartelBonusesFrom(state.cartelId, state.cartelContribution);
       },
     },

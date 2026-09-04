@@ -25,7 +25,14 @@ import { EffectsBar } from "./components/EffectsBar";
 import { IncidentModal } from "./components/IncidentModal";
 import { Toast } from "./components/Toast";
 import { useToast } from "./hooks/useToast";
-import { ERAS, INCIDENT_CHECK_MS, MARKET, QUESTS, TICK_MS } from "./game/data";
+import {
+  ERAS,
+  INCIDENT_CHECK_MS,
+  MARKET,
+  PIPELINE_DEGRADE_MS,
+  QUESTS,
+  TICK_MS,
+} from "./game/data";
 import { eraAdvancement, isQuestComplete, useGame } from "./game/store";
 import type { BuildingTypeKey } from "./game/types";
 
@@ -52,6 +59,7 @@ export default function App() {
   const marketTick = useGame((s) => s.marketTick);
   const incidentTick = useGame((s) => s.incidentTick);
   const marabouTick = useGame((s) => s.marabouTick);
+  const pipelineTick = useGame((s) => s.pipelineTick);
   const reset = useGame((s) => s.reset);
   const era = useGame((s) => s.era);
 
@@ -91,6 +99,12 @@ export default function App() {
     const id = setInterval(marabouTick, 5000);
     return () => clearInterval(id);
   }, [marabouTick]);
+
+  // Pipeline condition decays on held leases.
+  useEffect(() => {
+    const id = setInterval(pipelineTick, PIPELINE_DEGRADE_MS);
+    return () => clearInterval(id);
+  }, [pipelineTick]);
 
   function handleReset() {
     if (window.confirm("Wipe your save and start a new empire?")) {

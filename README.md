@@ -45,6 +45,11 @@ npm run lint     # type-check only
   salvage runs for cash, crude, and the occasional rare Marabou. Sonar boats run
   one mission at a time; divers run in parallel. Any mission can be rushed home
   with Marabou. Buy more units with cash or Marabou.
+- **Pipelines & ROVs** — every leased field carries a pipeline whose condition
+  decays over time, and a field's lease bonus fades in proportion (a field at
+  50% condition grants half its uplift). Dispatch an **ROV** to restore one to
+  full, or rush the repair with Marabou. More ROVs let you keep more fields
+  healthy at once.
 - **Cartel** — join one of three cartels for a cooperative bonus that grows with
   your standing: crude output, research output, or market sale prices. Contribute
   cash or research points to raise standing (up to level 5). Membership also
@@ -91,12 +96,14 @@ operations run against AI competitors rather than real players — true
 multiplayer (shared cartels, live PvP) would need the optional Node/Postgres
 backend the spec mentions.
 
-The **Deepwater Expansion** is partially landed: Marabou, sonar boats, and
-divers are in. Still to come are the Skills tree (Marabou's main sink), ROVs
-and pipeline condition, Semi-Submersible Rigs, and Supply Boats. The latter
-three assume buildings live *inside* regions; this game keeps one shared build
-grid with regions as leases, so those mechanics need a design decision before
-implementation.
+The **Deepwater Expansion** is partially landed: Marabou, sonar boats, divers,
+and the pipeline/ROV system are in. Still to come are the Skills tree
+(Marabou's main sink), Semi-Submersible Rigs, and Supply Boats.
+
+The expansion spec assumes buildings live *inside* regions, while this game
+keeps one shared build grid with regions as leases. Rather than refactor, those
+mechanics are adapted to the lease model — pipelines attach to leased fields and
+scale their bonus, and the remaining two will follow the same approach.
 
 Mission timers are compressed from the expansion spec's real-world hours to
 suit this game's 2-second production tick. Each mission option displays the

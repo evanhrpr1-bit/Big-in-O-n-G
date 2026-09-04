@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Gem, Plus, Radar, Waves, Zap } from "lucide-react";
+import { Gem, Plus, Radar, Waves, Wrench, Zap } from "lucide-react";
 import {
   FLEET_PURCHASE,
+  REGIONS,
   RUSH_MS_PER_MARABOU,
   SALVAGE_OPTIONS,
   SURVEY_OPTIONS,
@@ -122,10 +123,137 @@ export function FleetPanel({ showToast }: Props) {
         );
       })}
 
+      <RovSection showToast={showToast} now={now} />
+
       <p className="text-xs text-center text-[#6E6A5F]">
         Mission lengths are compressed to match this game's pacing — each option notes the
         real-world duration it stands in for.
       </p>
+    </div>
+  );
+}
+
+/**
+ * ROVs are dispatched at a target rather than a duration, so they get their own
+ * section keyed by leased region rather than the generic unit rows.
+ */
+function RovSection({ showToast, now }: { showToast: (m: string) => void; now: number }) {
+  const fleet = useGame((s) => s.fleet);
+  const pipelines = useGame((s) => s.pipelines);
+  const leasedRegions = useGame((s) => s.leasedRegions);
+  const resources = useGame((s) => s.resources);
+  const dispatchRov = useGame((s) => s.dispatchRov);
+  const collectMission = useGame((s) => s.collectMission);
+  const rushMission = useGame((s) => s.rushMission);
+  const buyFleetUnit = useGame((s) => s.buyFleetUnit);
+
+  const rovs = fleet.rovs ?? [];
+  const idleCount = rovs.filter((u) => !u.mission).length;
+  const cashPrice = fleetUnitCost("rovs", rovs.length);
+  const purchase = FLEET_PURCHASE.rovs;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <Wrench size={16} color="#E3A857" />
+        <span className="text-sm font-medium text-paper">ROVs</span>
+        <span className="text-[10px] text-[#8A8477]">
+          ({idleCount} idle of {rovs.length})
+        </span>
+      </div>
+      <p className="text-[11px] text-[#8A8477] -mt-1">
+        Pipelines degrade over time, and a field's lease bonus fades with its condition. Send
+        an ROV to restore one to full.
+      </p>
+
+      {leasedRegions.length === 0 ? (
+        <div className="border border-hair rounded-md p-3 bg-panel text-[11px] text-[#8A8477] text-center">
+          No pipelines yet — acquire a lease on the Map to start producing from a field.
+        </div>
+      ) : (
+        leasedRegions.map((regionId) => {
+          const region = REGIONS.find((r) => r.id === regionId);
+          const condition = pipelines[regionId] ?? 100;
+          const working = rovs.find((u) => u.mission?.regionId === regionId);
+          const done = working && now >= working.mission!.returnAt;
+          const remaining = working ? working.mission!.returnAt - now : 0;
+          const rushPrice = working ? Math.max(1, Math.ceil(remaining / RUSH_MS_PER_MARABOU)) : 0;
+          // Red as condition falls, green when healthy.
+          const bar = condition > 66 ? "#5B7B6E" : condition > 33 ? "#E3A857" : "#C1440E";
+
+          return (
+            <div key={regionId} className="border border-hair rounded-md p-2.5 bg-panel">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-paper truncate">
+                  {region?.name ?? regionId}
+                </span>
+                <span className="text-[10px] tabular-nums" style={{ color: bar }}>
+                  {Math.round(condition)}%
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 rounded-full bg-[#1B1A17] overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${condition}%`, backgroundColor: bar }}
+                />
+              </div>
+
+              <div className="mt-2">
+                {working ? (
+                  done ? (
+                    <button
+                      onClick={() => showToast(collectMission("rovs", working.id))}
+                      style={{ backgroundColor: "#E3A857", color: "#1B1A17" }}
+                      className="w-full rounded-md py-1.5 text-[11px] font-semibold"
+                    >
+                      Repair complete — collect
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => showToast(rushMission("rovs", working.id))}
+                      disabled={resources.marabou < rushPrice}
+                      style={{ opacity: resources.marabou < rushPrice ? 0.5 : 1 }}
+                      className="w-full rounded-md py-1.5 text-[11px] font-medium bg-[#38352E] text-paper flex items-center justify-center gap-1"
+                    >
+                      <Zap size={11} color="#B98CD6" /> Repairing {Math.ceil(remaining / 1000)}s ·
+                      rush {rushPrice}
+                    </button>
+                  )
+                ) : (
+                  <button
+                    onClick={() => showToast(dispatchRov(regionId))}
+                    disabled={idleCount === 0 || condition >= 100}
+                    style={{ opacity: idleCount === 0 || condition >= 100 ? 0.5 : 1 }}
+                    className="w-full rounded-md py-1.5 text-[11px] font-medium bg-[#38352E] text-paper flex items-center justify-center gap-1"
+                  >
+                    <Wrench size={11} />
+                    {condition >= 100 ? "Pipeline at full condition" : "Dispatch ROV"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })
+      )}
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => showToast(buyFleetUnit("rovs", "cash"))}
+          disabled={resources.cash < cashPrice}
+          style={{ opacity: resources.cash < cashPrice ? 0.5 : 1 }}
+          className="flex-1 rounded-md py-2 text-[11px] font-medium bg-[#38352E] text-paper flex items-center justify-center gap-1"
+        >
+          <Plus size={12} /> ${cashPrice.toLocaleString()}
+        </button>
+        <button
+          onClick={() => showToast(buyFleetUnit("rovs", "marabou"))}
+          disabled={resources.marabou < purchase.marabou}
+          style={{ opacity: resources.marabou < purchase.marabou ? 0.5 : 1 }}
+          className="flex-1 rounded-md py-2 text-[11px] font-medium bg-[#38352E] text-paper flex items-center justify-center gap-1"
+        >
+          <Gem size={12} color="#B98CD6" /> {purchase.marabou} Marabou
+        </button>
+      </div>
     </div>
   );
 }
