@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Beaker, ChevronDown, Hammer, ScrollText, Store, RotateCcw } from "lucide-react";
+import { Beaker, ChevronDown, Hammer, Map, ScrollText, Store, RotateCcw } from "lucide-react";
 import { ResourceBar } from "./components/ResourceBar";
 import { BuildPalette } from "./components/BuildPalette";
 import { Grid } from "./components/Grid";
@@ -7,6 +7,7 @@ import { SelectedPanel } from "./components/SelectedPanel";
 import { TechTree } from "./components/TechTree";
 import { QuestLog } from "./components/QuestLog";
 import { Market } from "./components/Market";
+import { ContinentMap } from "./components/ContinentMap";
 import { EraPanel } from "./components/EraPanel";
 import { Toast } from "./components/Toast";
 import { useToast } from "./hooks/useToast";
@@ -14,13 +15,14 @@ import { ERAS, MARKET, QUESTS, TICK_MS } from "./game/data";
 import { eraAdvancement, isQuestComplete, useGame } from "./game/store";
 import type { BuildingTypeKey } from "./game/types";
 
-type View = "build" | "research" | "quests" | "market";
+type View = "build" | "research" | "quests" | "market" | "map";
 
 const TABS: { id: View; label: string; icon: typeof Hammer; active: string }[] = [
   { id: "build", label: "Build", icon: Hammer, active: "#C1440E" },
   { id: "research", label: "Research", icon: Beaker, active: "#6E8CA0" },
   { id: "quests", label: "Quests", icon: ScrollText, active: "#E3A857" },
   { id: "market", label: "Market", icon: Store, active: "#5B7B6E" },
+  { id: "map", label: "Map", icon: Map, active: "#8A5CF6" },
 ];
 
 export default function App() {
@@ -113,9 +115,9 @@ export default function App() {
                 backgroundColor: isActive ? tab.active : "#252320",
                 color: isActive ? "#1B1A17" : "#EDE6D6",
               }}
-              className="relative flex-1 rounded-md py-2 flex items-center justify-center gap-1.5 text-sm font-medium"
+              className="relative flex-1 min-w-0 rounded-md py-2 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-[11px] sm:text-sm font-medium"
             >
-              <Icon size={14} /> {tab.label}
+              <Icon size={14} className="shrink-0" /> {tab.label}
               {showBadge && (
                 <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rust text-paper text-[10px] font-semibold flex items-center justify-center">
                   {claimableQuests}
@@ -147,6 +149,8 @@ export default function App() {
       {view === "quests" && <QuestLog showToast={showToast} />}
 
       {view === "market" && <Market showToast={showToast} />}
+
+      {view === "map" && <ContinentMap showToast={showToast} />}
 
       {selectedCell !== null && view === "build" && (
         <SelectedPanel

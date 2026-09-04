@@ -97,6 +97,27 @@ export type BuildingTypeKey =
   | "lngTerminal"
   | "solarPlant";
 
+/** An oil field on the continent map that can be scouted and leased. */
+export interface Region {
+  id: string;
+  name: string;
+  /** Position on the map backdrop, as percentages of its box. */
+  x: number;
+  y: number;
+  /** Minimum era index required to scout or lease this region. */
+  era: number;
+  /** Cash cost to scout, revealing the field's yield and lease terms. */
+  scoutCost: number;
+  /** Cost to acquire the lease once scouted. */
+  leaseCost: Partial<Resources>;
+  /** Permanent production bonus granted while the lease is held. */
+  bonus: { resource: ResourceKey; mult: number };
+  /** Rival company currently holding the field; their buyout premium is
+   *  already priced into `leaseCost`. */
+  rival?: string;
+  blurb: string;
+}
+
 /** A technological era. Advancing unlocks a new tier of buildings. */
 export interface Era {
   id: string;

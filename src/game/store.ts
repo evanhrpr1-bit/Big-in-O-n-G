@@ -6,6 +6,7 @@ import {
   ERAS,
   MARKET,
   QUESTS,
+  REGIONS,
   RESOURCE_META,
   SELLABLE,
   STARTING_RESOURCES,
@@ -46,6 +47,12 @@ export interface GameState {
   marketEvent: MarketEvent | null;
   /** Index into ERAS of the player's current era. */
   era: number;
+  /** Ids of regions that have been scouted (their terms are revealed). */
+  scoutedRegions: string[];
+  /** Ids of regions whose lease the player holds. */
+  leasedRegions: string[];
+  /** Production bonuses derived from held region leases. */
+  regionBonuses: ProductionBonuses;
 
   /** Advance production by one tick. */
   tick: () => void;
@@ -55,6 +62,10 @@ export interface GameState {
   sell: (resource: SellableResource, qty: number) => string;
   /** Advance to the next era if requirements are met. Returns a status message. */
   advanceEra: () => string;
+  /** Pay to scout a region, revealing its yield and lease terms. */
+  scoutRegion: (id: string) => string;
+  /** Acquire a scouted region's lease, activating its production bonus. */
+  leaseRegion: (id: string) => string;
   /** Place `type` at `index` if affordable and unlocked. Returns a status message. */
   build: (index: number, type: BuildingTypeKey) => string;
   /** Upgrade the building at `index`. Returns a status message. */
@@ -65,6 +76,17 @@ export interface GameState {
   claimQuest: (questId: string) => string;
   /** Wipe the save and start over. */
   reset: () => void;
+}
+
+/** Recompute the production bonus map from the set of held region leases. */
+function regionBonusesFrom(leasedRegions: string[]): ProductionBonuses {
+  const bonuses: ProductionBonuses = { ...NEUTRAL_BONUSES };
+  for (const id of leasedRegions) {
+    const region = REGIONS.find((r) => r.id === id);
+    if (!region) continue;
+    bonuses[region.bonus.resource] *= region.bonus.mult;
+  }
+  return bonuses;
 }
 
 /** Recompute the full bonus map from the set of researched techs. */
@@ -92,6 +114,9 @@ export const useGame = create<GameState>()(
       prices: startingPrices(),
       marketEvent: null,
       era: 0,
+      scoutedRegions: [],
+      leasedRegions: [],
+      regionBonuses: { ...NEUTRAL_BONUSES },
 
       tick: () =>
         set((state) => {
@@ -99,7 +124,9 @@ export const useGame = create<GameState>()(
           for (const cell of state.grid) {
             if (!cell) continue;
             const type = BUILDING_TYPES[cell.type];
-            const mult = state.techBonuses[type.resource] ?? 1;
+            const mult =
+              (state.techBonuses[type.resource] ?? 1) *
+              (state.regionBonuses[type.resource] ?? 1);
             const amount = type.baseRate * cell.level * mult;
             if (type.consumes) {
               const [consumeRes, consumeQty] = Object.entries(type.consumes)[0];
@@ -190,6 +217,52 @@ export const useGame = create<GameState>()(
         return `Advanced to the ${ERAS[nextIndex].name}`;
       },
 
+      scoutRegion: (id) => {
+        const state = get();
+        const region = REGIONS.find((r) => r.id === id);
+        if (!region) return "Unknown region";
+        if (state.scoutedRegions.includes(id)) return `${region.name} is already scouted`;
+        if (state.era < region.era) {
+          return `Reach the ${ERAS[region.era].name} to scout ${region.name}`;
+        }
+        if (state.resources.cash < region.scoutCost) {
+          return `Not enough cash to scout ${region.name}`;
+        }
+        set({
+          resources: {
+            ...state.resources,
+            cash: state.resources.cash - region.scoutCost,
+          },
+          scoutedRegions: [...state.scoutedRegions, id],
+        });
+        return `${region.name} scouted`;
+      },
+
+      leaseRegion: (id) => {
+        const state = get();
+        const region = REGIONS.find((r) => r.id === id);
+        if (!region) return "Unknown region";
+        if (state.leasedRegions.includes(id)) return `You already hold ${region.name}`;
+        if (!state.scoutedRegions.includes(id)) return `Scout ${region.name} first`;
+        if (state.era < region.era) {
+          return `Reach the ${ERAS[region.era].name} to lease ${region.name}`;
+        }
+        for (const [res, amount] of Object.entries(region.leaseCost)) {
+          if (state.resources[res as keyof Resources] < (amount as number)) {
+            return `Not enough ${RESOURCE_META[res as keyof Resources].label} for this lease`;
+          }
+        }
+        const resources = { ...state.resources };
+        for (const [res, amount] of Object.entries(region.leaseCost)) {
+          resources[res as keyof Resources] -= amount as number;
+        }
+        const leasedRegions = [...state.leasedRegions, id];
+        set({ resources, leasedRegions, regionBonuses: regionBonusesFrom(leasedRegions) });
+        return region.rival
+          ? `Outbid ${region.rival} for ${region.name}`
+          : `Lease acquired: ${region.name}`;
+      },
+
       build: (index, type) => {
         const state = get();
         if (state.grid[index]) return "That lot is already occupied";
@@ -275,11 +348,14 @@ export const useGame = create<GameState>()(
           prices: startingPrices(),
           marketEvent: null,
           era: 0,
+          scoutedRegions: [],
+          leasedRegions: [],
+          regionBonuses: { ...NEUTRAL_BONUSES },
         }),
     }),
     {
       name: "black-gold-empire",
-      version: 3,
+      version: 4,
       // Only persist durable game state — not action functions or transient
       // market events (those start fresh each session).
       partialize: (state) => ({
@@ -289,20 +365,27 @@ export const useGame = create<GameState>()(
         claimedQuests: state.claimedQuests,
         prices: state.prices,
         era: state.era,
+        scoutedRegions: state.scoutedRegions,
+        leasedRegions: state.leasedRegions,
       }),
       // Backfill fields added in later versions for older saves.
       migrate: (persisted, _version) => {
         const state = (persisted ?? {}) as Partial<GameState>;
         if (!state.prices) state.prices = startingPrices();
         if (typeof state.era !== "number") state.era = 0;
+        if (!state.scoutedRegions) state.scoutedRegions = [];
+        if (!state.leasedRegions) state.leasedRegions = [];
         return state as GameState;
       },
-      // Rehydrate derived tech bonuses from the saved tech list.
+      // Rehydrate derived bonuses from the saved tech and lease lists.
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         state.techBonuses = bonusesFrom(state.researchedTechs);
         if (!state.prices) state.prices = startingPrices();
         if (typeof state.era !== "number") state.era = 0;
+        if (!state.scoutedRegions) state.scoutedRegions = [];
+        if (!state.leasedRegions) state.leasedRegions = [];
+        state.regionBonuses = regionBonusesFrom(state.leasedRegions);
       },
     },
   ),
