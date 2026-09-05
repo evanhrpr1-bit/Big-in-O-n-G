@@ -19,9 +19,85 @@ const BAYS = 8;
 const MONKEY_AT = 0.6; // monkey board height, as a fraction of the tower
 const T = 0.016; // timber thickness
 
-const WOOD = "#A85F30";
-const WOOD_DARK = "#7C4423";
+// Weathered softwood, not paint: warm ochre browns rather than a rust orange.
+const WOOD = "#B5813F";
+const WOOD_DARK = "#8A5C2E";
 const CABLE = "#2A2620";
+
+/**
+ * Deterministic jitter, so every timber differs slightly but the derrick looks
+ * the same on every load. Geometry is built once at module scope and shared,
+ * so this runs a single time.
+ */
+let seed = 1337;
+function rng(): number {
+  seed = (seed * 1664525 + 1013904223) % 4294967296;
+  return seed / 4294967296;
+}
+
+/** A single timber's colour: the base tone, nudged in lightness and hue. */
+function timber(base: string, spread = 0.16): THREE.Color {
+  const c = new THREE.Color(base);
+  c.multiplyScalar(1 + (rng() - 0.5) * spread * 2);
+  c.offsetHSL((rng() - 0.5) * 0.02, (rng() - 0.5) * 0.08, 0);
+  return c;
+}
+
+/** Bake a per-member colour into the geometry so merged parts stay distinct. */
+function tint(g: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGeometry {
+  const count = g.attributes.position.count;
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return g;
+}
+
+/**
+ * Greyscale grain, drawn once to a canvas and multiplied by the timber colour.
+ * Box faces are UV-mapped 0–1, so the grain runs the length of each member the
+ * way sawn timber does.
+ */
+function makeGrainTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, 64, 256);
+
+  // Long wavering grain lines, plus occasional darker latewood bands.
+  for (let i = 0; i < 90; i++) {
+    const x = rng() * 64;
+    const dark = rng() < 0.18;
+    ctx.strokeStyle = `rgba(60,38,18,${dark ? 0.3 : 0.12})`;
+    ctx.lineWidth = dark ? 1.6 : 0.6 + rng();
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    for (let y = 0; y <= 256; y += 12) {
+      ctx.lineTo(x + Math.sin(y * 0.045 + i) * 1.8, y);
+    }
+    ctx.stroke();
+  }
+  // A few knots.
+  for (let i = 0; i < 5; i++) {
+    const x = rng() * 64;
+    const y = rng() * 256;
+    ctx.strokeStyle = "rgba(60,38,18,0.3)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 1.6 + rng() * 2, 3 + rng() * 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
+}
 
 /** Half-width of the tower at a given fraction of its height. */
 function halfWidthAt(f: number): number {
@@ -34,6 +110,7 @@ function box(
   pos: [number, number, number],
   rot: [number, number, number] = [0, 0, 0],
   parent?: THREE.Matrix4,
+  shade: string = WOOD,
 ): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(...size);
   const local = new THREE.Matrix4().compose(
@@ -42,7 +119,7 @@ function box(
     new THREE.Vector3(1, 1, 1),
   );
   g.applyMatrix4(parent ? new THREE.Matrix4().multiplyMatrices(parent, local) : local);
-  return g;
+  return tint(g, timber(shade));
 }
 
 /** Rotation about Y, used to place each of the four faces and corners. */
@@ -96,11 +173,13 @@ function buildFittings(): THREE.BufferGeometry {
 
   /** A railed platform: deck plus four posts and a top rail per side. */
   const platform = (y: number, half: number) => {
-    parts.push(box([half * 2, 0.018, half * 2], [0, y, 0]));
+    parts.push(box([half * 2, 0.018, half * 2], [0, y, 0], [0, 0, 0], undefined, WOOD_DARK));
     for (let k = 0; k < 4; k++) {
       const face = spin((k * Math.PI) / 2);
-      parts.push(box([half * 2, 0.01, 0.012], [0, y + 0.055, half], [0, 0, 0], face));
-      parts.push(box([0.012, 0.06, 0.012], [half - 0.01, y + 0.03, half], [0, 0, 0], face));
+      parts.push(box([half * 2, 0.01, 0.012], [0, y + 0.055, half], [0, 0, 0], face, WOOD_DARK));
+      parts.push(
+        box([0.012, 0.06, 0.012], [half - 0.01, y + 0.03, half], [0, 0, 0], face, WOOD_DARK),
+      );
     }
   };
 
@@ -126,7 +205,7 @@ function buildFittings(): THREE.BufferGeometry {
       new THREE.Vector3(1, 1, 1),
     ),
   );
-  parts.push(wheel);
+  parts.push(tint(wheel, timber(WOOD_DARK)));
   for (let k = 0; k < 3; k++) {
     parts.push(box([0.012, 0.16, 0.012], [0.2, 0.09, 0.22], [(k * Math.PI) / 3, 0, 0]));
   }
@@ -149,6 +228,7 @@ function buildGuyWires(): THREE.BufferGeometry {
   return mergeGeometries(parts, false)!;
 }
 
+const GRAIN = makeGrainTexture();
 const TOWER = buildTower();
 const FITTINGS = buildFittings();
 const GUYS = buildGuyWires();
@@ -157,10 +237,10 @@ export function DerrickModel() {
   return (
     <group>
       <mesh geometry={TOWER} castShadow receiveShadow>
-        <meshStandardMaterial color={WOOD} roughness={0.85} metalness={0.05} />
+        <meshStandardMaterial map={GRAIN} vertexColors roughness={0.95} metalness={0} />
       </mesh>
       <mesh geometry={FITTINGS} castShadow receiveShadow>
-        <meshStandardMaterial color={WOOD_DARK} roughness={0.9} metalness={0.05} />
+        <meshStandardMaterial map={GRAIN} vertexColors roughness={0.95} metalness={0} />
       </mesh>
       <mesh geometry={GUYS}>
         <meshStandardMaterial color={CABLE} roughness={0.6} metalness={0.4} />
